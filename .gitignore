@@ -24,6 +24,9 @@ env/
 htmlcov/
 coverage.xml
 
+# Uploaded files (local)
+uploads/
+
 # Packaging / build
 build/
 dist/
