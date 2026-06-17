@@ -1,0 +1,33 @@
+---
+description: Testing standards for SenseiAPI
+alwaysApply: true
+---
+
+# Testing Standards
+
+Every behavior change ships with tests. Code without tests is not done.
+
+## Rules
+- Write tests with `pytest`. Test files live in `tests/`, named `test_*.py`.
+- Test FastAPI endpoints through `fastapi.testclient.TestClient` (or `httpx.AsyncClient`) — assert status code AND response body.
+- Cover the three cases: happy path, edge case, and failure/error path. A single happy-path test is not enough.
+- One logical assertion focus per test; name tests by behavior: `test_create_user_returns_201`, `test_create_user_rejects_duplicate_email`.
+- Use fixtures for setup/shared resources; use `pytest.mark.parametrize` instead of copy-pasted near-identical tests.
+- Tests must be deterministic and isolated — no real network, no shared mutable state, no ordering dependencies. Mock external services.
+- Never weaken a test just to make it pass. Fix the code, or fix the test for the right reason.
+
+## Workflow
+- Run `pytest` (and `ruff check`, `mypy`) before declaring a task complete.
+- When fixing a bug, first add a failing test that reproduces it, then make it pass.
+
+```python
+from fastapi.testclient import TestClient
+from main import app
+
+client = TestClient(app)
+
+def test_health_returns_ok():
+    res = client.get("/health")
+    assert res.status_code == 200
+    assert res.json() == {"status": "ok"}
+```

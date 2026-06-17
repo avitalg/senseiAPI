@@ -4,10 +4,10 @@ app = FastAPI(title="SenseiAPI", version="0.1.0")
 
 
 @app.get("/")
-def root():
+def root() -> dict[str, str]:
     return {"message": "Welcome to SenseiAPI"}
 
 
 @app.get("/health")
-def health():
+def health() -> dict[str, str]:
     return {"status": "ok"}

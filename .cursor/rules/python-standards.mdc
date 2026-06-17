@@ -1,0 +1,43 @@
+---
+description: Core Python coding standards for SenseiAPI
+alwaysApply: true
+---
+
+# Python Coding Standards
+
+Target Python 3.11+. Code must pass `ruff check`, `ruff format`, and `mypy` before it is considered done.
+
+## Style & Structure
+- Follow PEP 8; let `ruff format` (Black-compatible) own formatting. Don't hand-format.
+- Use full type hints on every function signature and module-level variable. No bare `Any` unless unavoidable (and comment why).
+- Prefer pure functions and small modules. Keep functions under ~40 lines; extract helpers instead of nesting deeply.
+- Use `pathlib.Path` over `os.path`, f-strings over `%`/`.format`, and `enum.Enum` over magic strings/ints.
+
+## Naming
+- `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_SNAKE` for constants.
+- Names describe intent, not type (`user_count`, not `n` or `int_users`).
+
+## Errors & Logging
+- Never swallow exceptions. Catch the narrowest type, add context, and re-raise or handle deliberately.
+
+```python
+# ❌ BAD
+try:
+    data = load()
+except Exception:
+    pass
+
+# ✅ GOOD
+try:
+    data = load()
+except FileNotFoundError as e:
+    logger.error("config missing", extra={"path": path})
+    raise ConfigError(f"missing config at {path}") from e
+```
+
+- Use the `logging` module, not `print`. Never log secrets, tokens, or PII.
+
+## Safety
+- Validate all external input at the boundary (use Pydantic models).
+- No hardcoded secrets — read from env via config. Keep `.env` out of git.
+- No mutable default arguments (`def f(x=[])` is a bug; use `None` + init inside).

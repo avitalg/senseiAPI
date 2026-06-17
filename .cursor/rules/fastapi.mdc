@@ -1,0 +1,28 @@
+---
+description: FastAPI conventions for SenseiAPI
+globs: **/*.py
+alwaysApply: false
+---
+
+# FastAPI Conventions
+
+## Structure
+- Group endpoints with `APIRouter` per domain (e.g. `routers/users.py`), then `app.include_router(...)` in `main.py`. Don't pile all routes into `main.py`.
+- Keep route handlers thin: parse/validate in, delegate business logic to a service/function, return a response model. No DB or business logic inline in the handler.
+
+## Schemas & Validation
+- Every request body and response uses an explicit Pydantic model. Set `response_model=` on routes.
+- Separate input and output models (e.g. `UserCreate` vs `UserOut`) — never return ORM objects or secrets directly.
+
+```python
+# ✅ GOOD
+@router.post("/users", response_model=UserOut, status_code=201)
+async def create_user(payload: UserCreate, svc: UserService = Depends(get_user_service)) -> UserOut:
+    return await svc.create(payload)
+```
+
+## Async, Errors & Dependencies
+- Use `async def` for handlers; never call blocking I/O inside them (offload with `run_in_threadpool` if needed).
+- Inject shared resources (db sessions, clients, settings) via `Depends`, not globals.
+- Raise `HTTPException` with a correct status code for client errors; return appropriate `status_code` on success (201 for create, 204 for delete).
+- Load config via a Pydantic `BaseSettings` object read from env — no hardcoded URLs/keys.
