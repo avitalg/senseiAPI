@@ -96,6 +96,8 @@ ruff format .
 - Tests live in `tests/` and are named `test_*.py`.
 - Run the suite with `pytest` (or `pytest -q` for quiet output).
 - Endpoints are tested via `fastapi.testclient.TestClient`; assert both status code and response body.
+- Database integration tests use Testcontainers and require Docker.
+- Run `pytest -m "not integration"` to skip integration tests.
 - Cover the happy path, edge cases, and failure paths.
 
 ## Project structure
