@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, Response, status
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
+from analysis import router as analysis_router
 from audio import router as audio_router
 from core.config import Settings, get_settings
 from core.database import ping_database
@@ -30,6 +31,7 @@ class ReadinessResponse(BaseModel):
 app = FastAPI(title="SenseiAPI", version="0.1.0")
 
 app.include_router(audio_router)
+app.include_router(analysis_router)
 
 
 @app.get("/", response_model=RootResponse)
