@@ -26,6 +26,9 @@ class ClientFactory(Protocol):
     def __call__(
         self,
         *,
+        auth_token_secret_key: str | None = None,
+        auth_token_ttl_seconds: int | None = None,
+        enable_security: bool | None = None,
         max_upload_bytes: int | None = None,
         transcriber: Transcriber | None = None,
         database_url: str | None = None,
@@ -42,12 +45,22 @@ def make_client(tmp_path: Path) -> Iterator[ClientFactory]:
 
     def _make(
         *,
+        auth_token_secret_key: str | None = None,
+        auth_token_ttl_seconds: int | None = None,
+        enable_security: bool | None = None,
         max_upload_bytes: int | None = None,
         transcriber: Transcriber | None = None,
         database_url: str | None = None,
     ) -> tuple[TestClient, Settings]:
         upload_dir = tmp_path / "uploads"
         settings = Settings(upload_dir=upload_dir)
+        if auth_token_secret_key is not None:
+            settings.auth_token_secret_key = auth_token_secret_key
+            settings.enable_security = True
+        elif enable_security is not None:
+            settings.enable_security = enable_security
+        if auth_token_ttl_seconds is not None:
+            settings.auth_token_ttl_seconds = auth_token_ttl_seconds
         if max_upload_bytes is not None:
             settings.max_upload_bytes = max_upload_bytes
         settings.database_url = database_url
