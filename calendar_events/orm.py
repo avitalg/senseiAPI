@@ -17,6 +17,7 @@ class CalendarEventRecord(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # [start_at, end_at) - half-interval
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

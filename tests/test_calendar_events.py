@@ -435,7 +435,7 @@ def test_calendar_database_lists_event_by_requested_time_zone(
 
 
 @pytest.mark.integration
-def test_calendar_database_lists_week_long_event_for_overlapping_ranges(
+def test_calendar_database_intervals_intersection(
     make_client: ClientFactory,
 ) -> None:
     with get_database_url() as database_url:
@@ -469,3 +469,48 @@ def test_calendar_database_lists_week_long_event_for_overlapping_ranges(
             earlier_partial_overlap_body = earlier_partial_overlap.json()
             assert len(earlier_partial_overlap_body) == 1
             assert earlier_partial_overlap_body[0]["id"] == event_id
+
+            interval_includes_all_meeting = client.get("/calendar?from=2026-06-20&to=2026-06-22")
+            assert interval_includes_all_meeting.status_code == 200
+            interval_includes_all_meeting_body = interval_includes_all_meeting.json()
+            assert len(interval_includes_all_meeting_body) == 1
+            assert interval_includes_all_meeting_body[0]["id"] == event_id
+
+
+@pytest.mark.integration
+def test_calendar_database_intervals_intersection_boundaries(
+    make_client: ClientFactory,
+) -> None:
+    with get_database_url() as database_url:
+        client, _ = make_client(database_url=database_url)
+        with client:
+            event_ids = []
+            for event in [
+                {
+                    "title": "Meeting 1",
+                    "start_at": "2026-01-01T22:00:00+02:00",
+                    "end_at": "2026-01-02T00:00:00+02:00",
+                },
+                {
+                    "title": "Meeting 2",
+                    "start_at": "2026-01-02T00:00:00+02:00",
+                    "end_at": "2026-01-02T02:00:00+02:00",
+                },
+                {
+                    "title": "Meeting 3",
+                    "start_at": "2026-01-03T00:00:00+02:00",
+                    "end_at": "2026-01-03T02:00:00+02:00",
+                },
+            ]:
+                created = client.post("/calendar", json=event)
+                assert created.status_code == 201
+                event_ids.append(created.json()["id"])
+
+            listed = client.get("/calendar?from=2026-01-02&to=2026-01-02")
+            assert listed.status_code == 200
+            body = listed.json()
+            assert len(body) == 1
+            assert body[0]["id"] == event_ids[1]
+            assert body[0]["title"] == "Meeting 2"
+            assert body[0]["start_at"] == "2026-01-02T00:00:00+02:00"
+            assert body[0]["end_at"] == "2026-01-02T02:00:00+02:00"

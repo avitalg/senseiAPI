@@ -66,16 +66,16 @@ class CalendarEventRepository:
                     CalendarEventRecord.start_at < to_at,
                 ),
                 and_(
-                    CalendarEventRecord.end_at >= from_at,
-                    CalendarEventRecord.end_at < to_at,
+                    CalendarEventRecord.end_at > from_at,
+                    CalendarEventRecord.end_at <= to_at,
                 ),
                 and_(
                     from_at >= CalendarEventRecord.start_at,
                     from_at < CalendarEventRecord.end_at,
                 ),
                 and_(
-                    to_at >= CalendarEventRecord.start_at,
-                    to_at < CalendarEventRecord.end_at,
+                    to_at > CalendarEventRecord.start_at,
+                    to_at <= CalendarEventRecord.end_at,
                 ),
             ),
         )
