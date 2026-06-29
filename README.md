@@ -21,21 +21,6 @@ pip install -r requirements-dev.txt
 # Create local environment config
 cp .env.example .env
 ```
-## Analysis backend
-
-The transcript analysis layer currently supports two analyzer backends:
-
-- `mock` (default) – uses `MockAnalyzer` for local development and testing.
-- `gemini` – uses the Gemini API for real transcript analysis.
-
-To use Gemini, configure your `.env` file:
-
-```env
-ANALYZER_BACKEND=gemini
-GOOGLE_API_KEY=your_api_key
-```
-
-If `ANALYZER_BACKEND=mock`, no API key is required.
 
 > `requirements-dev.txt` includes everything in `requirements.txt` plus the test/lint tools.
 > For a production install, use `pip install -r requirements.txt`.
@@ -87,6 +72,22 @@ The API is then available at:
 - Readiness check: http://127.0.0.1:8000/ready
 - Interactive docs (Swagger UI): http://127.0.0.1:8000/docs
 - Alternative docs (ReDoc): http://127.0.0.1:8000/redoc
+
+## Analysis backend
+
+The transcript analysis layer is provider-agnostic and currently supports two backends:
+
+- `mock` (default) – uses `MockAnalyzer` for local development and testing.
+- `gemini` – uses the Gemini API for real transcript analysis.
+
+To use Gemini, configure your `.env` file:
+
+```env
+ANALYZER_BACKEND=gemini
+GOOGLE_API_KEY=your_api_key
+```
+
+If `ANALYZER_BACKEND=mock`, no API key is required.
 
 ## Quality checks
 
