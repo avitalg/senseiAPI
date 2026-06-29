@@ -2,10 +2,23 @@ from fastapi import Depends
 
 from analysis.analyzer import Analyzer, MockAnalyzer
 from analysis.service import AnalysisService
+from core.config import get_settings
 
 
 def get_analyzer() -> Analyzer:
-    return MockAnalyzer()
+    settings = get_settings()
+    backend = settings.analyzer_backend
+
+    if backend == "mock":
+        return MockAnalyzer()
+
+    if backend == "gemini":
+        if not settings.google_api_key:
+            raise ValueError("GOOGLE_API_KEY must be set when ANALYZER_BACKEND=gemini")
+        from analysis.gemini_analyzer import GeminiAnalyzer
+        return GeminiAnalyzer(settings.google_api_key)
+
+    raise ValueError(f"Unknown ANALYZER_BACKEND: {backend!r}. Expected 'mock' or 'gemini'.")
 
 
 def get_analysis_service(

@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 25 * 1024 * 1024  # 25 MiB
     database_url: str = "postgresql+asyncpg://sensei:sensei@localhost:5432/senseiapi"
 
+    # Analysis backend: "mock" (default) or "gemini".
+    analyzer_backend: str = "mock"
+    google_api_key: str = ""
+
     # Whisper transcription (local, via faster-whisper; no API key needed).
     whisper_model: str = "small"  # tiny|base|small|medium|large-v3 (or a local path)
     whisper_device: str = "cpu"  # "cpu", "cuda", or "auto"

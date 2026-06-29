@@ -21,6 +21,21 @@ pip install -r requirements-dev.txt
 # Create local environment config
 cp .env.example .env
 ```
+## Analysis backend
+
+The transcript analysis layer currently supports two analyzer backends:
+
+- `mock` (default) – uses `MockAnalyzer` for local development and testing.
+- `gemini` – uses the Gemini API for real transcript analysis.
+
+To use Gemini, configure your `.env` file:
+
+```env
+ANALYZER_BACKEND=gemini
+GOOGLE_API_KEY=your_api_key
+```
+
+If `ANALYZER_BACKEND=mock`, no API key is required.
 
 > `requirements-dev.txt` includes everything in `requirements.txt` plus the test/lint tools.
 > For a production install, use `pip install -r requirements.txt`.
