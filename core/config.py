@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     upload_dir: Path = Path("uploads")
     max_upload_bytes: int = 25 * 1024 * 1024  # 25 MiB
-    database_url: str = "postgresql+asyncpg://sensei:sensei@localhost:5432/senseiapi"
+    database_url: str | None = "postgresql+asyncpg://sensei:sensei@localhost:5432/senseiapi"
 
     # Analysis backend: "mock" (default) or "gemini".
     analyzer_backend: str = "mock"
