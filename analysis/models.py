@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 
 
+class AnalysisFailedError(Exception):
+    """Raised when analysis fails."""
+
+
 @dataclass(frozen=True)
 class AnalysisResult:
     summary: str

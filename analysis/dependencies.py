@@ -13,8 +13,6 @@ def get_analyzer() -> Analyzer:
         return MockAnalyzer()
 
     if backend == "gemini":
-        if not settings.google_api_key:
-            raise ValueError("GOOGLE_API_KEY must be set when ANALYZER_BACKEND=gemini")
         from analysis.gemini_analyzer import GeminiAnalyzer
         return GeminiAnalyzer(settings.google_api_key)
 

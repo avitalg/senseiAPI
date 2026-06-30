@@ -1,9 +1,15 @@
+import logging
+
+import httpx
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import BaseModel
 
 from analysis.analyzer import Analyzer
-from analysis.models import AnalysisResult
+from analysis.models import AnalysisFailedError, AnalysisResult
+
+logger = logging.getLogger(__name__)
 
 _MODEL = "gemini-2.5-flash"
 
@@ -41,17 +47,21 @@ class GeminiAnalyzer(Analyzer):
         self._client = genai.Client(api_key=api_key)
 
     async def analyze(self, transcript: str) -> AnalysisResult:
-        response = await self._client.aio.models.generate_content(
-            model=_MODEL,
-            contents=_PROMPT_TEMPLATE.format(transcript=transcript),
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=_AnalysisSchema,
-            ),
-        )
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL,
+                contents=_PROMPT_TEMPLATE.format(transcript=transcript),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=_AnalysisSchema,
+                ),
+            )
+        except (genai_errors.APIError, httpx.HTTPError) as exc:
+            logger.exception("gemini analysis failed")
+            raise AnalysisFailedError("analysis failed") from exc
         parsed: _AnalysisSchema | None = response.parsed
         if parsed is None:
-            raise ValueError(
+            raise AnalysisFailedError(
                 f"Gemini returned an unparseable response. Raw text: {response.text!r}"
             )
         return AnalysisResult(

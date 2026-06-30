@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +46,14 @@ class Settings(BaseSettings):
         "audio/x-flac",
         "audio/webm",
     )
+
+    @model_validator(mode="after")
+    def _validate_analyzer_config(self) -> Self:
+        if self.analyzer_backend == "gemini" and not self.google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY must be set when ANALYZER_BACKEND=gemini"
+            )
+        return self
 
 
 @lru_cache
