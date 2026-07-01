@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +21,10 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploads")
     max_upload_bytes: int = 25 * 1024 * 1024  # 25 MiB
     database_url: str | None = "postgresql+asyncpg://sensei:sensei@localhost:5432/senseiapi"
+
+    # Analysis backend: "mock" (default) or "gemini".
+    analyzer_backend: str = "mock"
+    google_api_key: str = ""
 
     # Whisper transcription (local, via faster-whisper; no API key needed).
     whisper_model: str = "small"  # tiny|base|small|medium|large-v3 (or a local path)
@@ -40,6 +46,14 @@ class Settings(BaseSettings):
         "audio/x-flac",
         "audio/webm",
     )
+
+    @model_validator(mode="after")
+    def _validate_analyzer_config(self) -> Self:
+        if self.analyzer_backend == "gemini" and not self.google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY must be set when ANALYZER_BACKEND=gemini"
+            )
+        return self
 
 
 @lru_cache

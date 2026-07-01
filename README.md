@@ -73,6 +73,22 @@ The API is then available at:
 - Interactive docs (Swagger UI): http://127.0.0.1:8000/docs
 - Alternative docs (ReDoc): http://127.0.0.1:8000/redoc
 
+## Analysis backend
+
+The transcript analysis layer is provider-agnostic and currently supports two backends:
+
+- `mock` (default) – uses `MockAnalyzer` for local development and testing.
+- `gemini` – uses the Gemini API for real transcript analysis.
+
+To use Gemini, configure your `.env` file:
+
+```env
+ANALYZER_BACKEND=gemini
+GOOGLE_API_KEY=your_api_key
+```
+
+If `ANALYZER_BACKEND=mock`, no API key is required.
+
 ## Quality checks
 
 Run all of these before opening a PR or marking a task done — they must all pass:
