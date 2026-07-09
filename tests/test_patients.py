@@ -25,6 +25,8 @@ class _FakePatientService:
                 name="Jane Doe",
                 phone="050-1234567",
                 email="jane@example.com",
+                description="Anxiety and sleep issues",
+                archived=False,
                 created_at=CREATED_AT,
             ),
             Patient(
@@ -32,6 +34,8 @@ class _FakePatientService:
                 name="John Smith",
                 phone="052-9876543",
                 email=None,
+                description=None,
+                archived=False,
                 created_at=OTHER_CREATED_AT,
             ),
         ]
@@ -42,30 +46,39 @@ class _FakePatientService:
         name: str,
         phone: str,
         email: str | None = None,
+        description: str | None = None,
     ) -> Patient:
         return Patient(
             id=PATIENT_ID,
             name=name,
             phone=phone,
             email=email,
+            description=description,
+            archived=False,
             created_at=CREATED_AT,
         )
 
-    async def list_patients(self) -> list[Patient]:
-        return list(self._patients)
+    async def list_patients(self, *, archived: bool = False) -> list[Patient]:
+        return [patient for patient in self._patients if patient.archived is archived]
 
     async def update_patient(self, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
         for index, patient in enumerate(self._patients):
             if patient.id != patient_id:
                 continue
+            name = str(updates["name"]) if "name" in updates else patient.name
             phone = str(updates["phone"]) if "phone" in updates else patient.phone
             email_value = updates.get("email", patient.email)
             email = None if email_value is None else str(email_value)
+            description_value = updates.get("description", patient.description)
+            description = None if description_value is None else str(description_value)
+            archived = bool(updates["archived"]) if "archived" in updates else patient.archived
             updated = Patient(
                 id=patient.id,
-                name=patient.name,
+                name=name,
                 phone=phone,
                 email=email,
+                description=description,
+                archived=archived,
                 created_at=patient.created_at,
             )
             self._patients[index] = updated
@@ -81,7 +94,8 @@ class _FakePatientService:
 @pytest.fixture
 def patient_client(make_client: ClientFactory) -> TestClient:
     client, _ = make_client()
-    app.dependency_overrides[get_patient_service] = lambda: _FakePatientService()
+    fake = _FakePatientService()
+    app.dependency_overrides[get_patient_service] = lambda: fake
     return client
 
 
@@ -100,6 +114,8 @@ def test_add_patient_returns_201(patient_client: TestClient) -> None:
     assert body["phone"] == "050-1234567"
     assert body["created_at"] is not None
     assert body["email"] is None
+    assert body["description"] is None
+    assert body["archived"] is False
 
 
 def test_add_patient_with_email_returns_email(patient_client: TestClient) -> None:
@@ -113,6 +129,19 @@ def test_add_patient_with_email_returns_email(patient_client: TestClient) -> Non
     )
     assert res.status_code == 201
     assert res.json()["email"] == "jane@example.com"
+
+
+def test_add_patient_with_description_returns_description(patient_client: TestClient) -> None:
+    res = patient_client.post(
+        "/patients",
+        json={
+            "name": "Jane Doe",
+            "phone": "050-1234567",
+            "description": "Anxiety and sleep issues",
+        },
+    )
+    assert res.status_code == 201
+    assert res.json()["description"] == "Anxiety and sleep issues"
 
 
 def test_add_patient_without_email_returns_null(patient_client: TestClient) -> None:
@@ -164,7 +193,7 @@ def test_delete_patient_rejects_invalid_id(patient_client: TestClient) -> None:
     assert res.status_code == 422
 
 
-def test_list_patients_returns_all_patients(patient_client: TestClient) -> None:
+def test_list_patients_returns_active_only_by_default(patient_client: TestClient) -> None:
     res = patient_client.get("/patients")
     assert res.status_code == 200
     body = res.json()
@@ -172,7 +201,52 @@ def test_list_patients_returns_all_patients(patient_client: TestClient) -> None:
     assert body[0]["id"] == str(PATIENT_ID)
     assert body[0]["name"] == "Jane Doe"
     assert body[0]["email"] == "jane@example.com"
+    assert body[0]["description"] == "Anxiety and sleep issues"
+    assert body[0]["archived"] is False
     assert body[1]["id"] == str(OTHER_PATIENT_ID)
+
+
+def test_list_patients_archived_returns_empty_by_default(patient_client: TestClient) -> None:
+    res = patient_client.get("/patients", params={"archived": True})
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_update_patient_archive_returns_200(patient_client: TestClient) -> None:
+    res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"archived": True},
+    )
+    assert res.status_code == 200
+    assert res.json()["archived"] is True
+
+    active_res = patient_client.get("/patients")
+    assert len(active_res.json()) == 1
+    assert active_res.json()[0]["id"] == str(OTHER_PATIENT_ID)
+
+    archived_res = patient_client.get("/patients", params={"archived": True})
+    assert len(archived_res.json()) == 1
+    assert archived_res.json()[0]["id"] == str(PATIENT_ID)
+
+
+def test_update_patient_unarchive_returns_200(patient_client: TestClient) -> None:
+    patient_client.patch(f"/patients/{PATIENT_ID}", json={"archived": True})
+    res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"archived": False},
+    )
+    assert res.status_code == 200
+    assert res.json()["archived"] is False
+    assert len(patient_client.get("/patients").json()) == 2
+
+
+def test_update_patient_name_returns_200(patient_client: TestClient) -> None:
+    res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"name": "Updated Name"},
+    )
+    assert res.status_code == 200
+    assert res.json()["name"] == "Updated Name"
 
 
 def test_update_patient_phone_returns_200(patient_client: TestClient) -> None:
@@ -184,6 +258,24 @@ def test_update_patient_phone_returns_200(patient_client: TestClient) -> None:
     body = res.json()
     assert body["phone"] == "050-9999999"
     assert body["email"] == "jane@example.com"
+
+
+def test_update_patient_description_returns_200(patient_client: TestClient) -> None:
+    res = patient_client.patch(
+        f"/patients/{OTHER_PATIENT_ID}",
+        json={"description": "Follow-up for stress management"},
+    )
+    assert res.status_code == 200
+    assert res.json()["description"] == "Follow-up for stress management"
+
+
+def test_update_patient_clears_description(patient_client: TestClient) -> None:
+    res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"description": None},
+    )
+    assert res.status_code == 200
+    assert res.json()["description"] is None
 
 
 def test_update_patient_email_returns_200(patient_client: TestClient) -> None:
@@ -237,19 +329,22 @@ def test_update_patient_persists_in_database(make_client: ClientFactory) -> None
                     "name": "John Smith",
                     "phone": "052-9876543",
                     "email": "john@example.com",
+                    "description": "Initial intake notes",
                 },
             )
             assert create_res.status_code == 201
             patient_id = create_res.json()["id"]
+            assert create_res.json()["description"] == "Initial intake notes"
 
             update_res = client.patch(
                 f"/patients/{patient_id}",
-                json={"phone": "050-1111111", "email": "updated@example.com"},
+                json={"phone": "050-1111111", "email": "updated@example.com", "description": None},
             )
             assert update_res.status_code == 200
             body = update_res.json()
             assert body["phone"] == "050-1111111"
             assert body["email"] == "updated@example.com"
+            assert body["description"] is None
 
 
 @pytest.mark.integration

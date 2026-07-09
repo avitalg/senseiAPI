@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploads")
     max_upload_bytes: int = 25 * 1024 * 1024  # 25 MiB
     database_url: str | None = "postgresql+asyncpg://sensei:sensei@localhost:5432/senseiapi"
+    cors_origins: str = "http://localhost:3110,http://127.0.0.1:3110"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     # Whisper transcription (local, via faster-whisper; no API key needed).
     whisper_model: str = "small"  # tiny|base|small|medium|large-v3 (or a local path)

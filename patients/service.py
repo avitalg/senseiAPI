@@ -16,15 +16,17 @@ class PatientService:
         name: str,
         phone: str,
         email: str | None = None,
+        description: str | None = None,
     ) -> Patient:
         return await self._repository.create(
             name=name,
             phone=phone,
             email=email,
+            description=description,
         )
 
-    async def list_patients(self) -> list[Patient]:
-        return await self._repository.list_all()
+    async def list_patients(self, *, archived: bool = False) -> list[Patient]:
+        return await self._repository.list_all(archived=archived)
 
     async def update_patient(self, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
         return await self._repository.update(patient_id, updates)

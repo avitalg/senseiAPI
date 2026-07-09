@@ -11,16 +11,20 @@ class PatientCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     phone: str = Field(min_length=3, max_length=32)
     email: EmailStr | None = None
+    description: str | None = None
 
 
 class PatientUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = Field(default=None, min_length=3, max_length=32)
     email: EmailStr | None = None
+    description: str | None = None
+    archived: bool | None = None
 
     @model_validator(mode="after")
     def at_least_one_field(self) -> Self:
         if not self.model_fields_set:
-            raise ValueError("at least one of phone or email must be provided")
+            raise ValueError("at least one of name, phone, email, description or archived must be provided")
         return self
 
 
@@ -29,6 +33,8 @@ class PatientOut(BaseModel):
     name: str
     phone: str
     email: str | None
+    description: str | None
+    archived: bool
     created_at: datetime
 
     @classmethod
@@ -38,5 +44,7 @@ class PatientOut(BaseModel):
             name=patient.name,
             phone=patient.phone,
             email=patient.email,
+            description=patient.description,
+            archived=patient.archived,
             created_at=patient.created_at,
         )

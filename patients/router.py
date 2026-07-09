@@ -24,6 +24,7 @@ async def add_patient(
             name=payload.name,
             phone=payload.phone,
             email=payload.email,
+            description=payload.description,
         )
     except SQLAlchemyError as exc:
         logger.error("failed to create patient", exc_info=exc)
@@ -36,10 +37,11 @@ async def add_patient(
 
 @router.get("", response_model=list[PatientOut])
 async def list_patients(
+    archived: bool = False,
     service: PatientService = Depends(get_patient_service),
 ) -> list[PatientOut]:
     try:
-        patients = await service.list_patients()
+        patients = await service.list_patients(archived=archived)
     except SQLAlchemyError as exc:
         logger.error("failed to list patients", exc_info=exc)
         raise HTTPException(

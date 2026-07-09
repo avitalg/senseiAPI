@@ -57,3 +57,15 @@ def test_settings_reads_database_url_from_environment(monkeypatch: pytest.Monkey
 def test_unknown_route_returns_404() -> None:
     res = client.get("/does-not-exist")
     assert res.status_code == 404
+
+
+def test_cors_allows_frontend_origin() -> None:
+    res = client.options(
+        "/calendar",
+        headers={
+            "Origin": "http://localhost:3110",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert res.status_code == 200
+    assert res.headers.get("access-control-allow-origin") == "http://localhost:3110"

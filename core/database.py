@@ -51,6 +51,12 @@ async def init_database(settings: Settings) -> None:
     engine = get_engine(settings.database_url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text(
+            "ALTER TABLE patients ADD COLUMN IF NOT EXISTS description TEXT"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE patients ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
 
 
 async def ping_database(settings: Settings) -> bool:

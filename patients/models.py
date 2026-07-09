@@ -17,4 +17,6 @@ class Patient:
     name: str
     phone: str
     email: str | None
+    description: str | None
+    archived: bool
     created_at: datetime
