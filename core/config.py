@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploads")
     max_upload_bytes: int = 25 * 1024 * 1024  # 25 MiB
     database_url: str | None = "postgresql+asyncpg://sensei:sensei@localhost:5432/senseiapi"
-    cors_origins: str = "http://localhost:3110,http://127.0.0.1:3110"
+    # Comma-separated browser origins — set via CORS_ORIGINS in .env (see .env.example).
+    cors_origins: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:
