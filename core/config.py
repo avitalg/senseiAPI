@@ -39,6 +39,10 @@ class Settings(BaseSettings):
 
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True
+    # "ollama" runs the real model; "mock" returns canned data for frontend work and CI.
+    # Mock is opt-in on purpose: serving invented clinical content by default is not a
+    # mistake worth risking in a therapy product.
+    summary_backend: Literal["ollama", "mock"] = "ollama"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
     # Ollama defaults num_ctx to 2048 and silently truncates longer input, which would

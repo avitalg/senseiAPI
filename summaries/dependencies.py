@@ -2,11 +2,14 @@ from core.config import Settings, get_settings
 from core.database import SessionDep, SettingsDep
 from summaries.repository import SummaryRepository
 from summaries.service import SummaryService
-from summaries.summarizer import OllamaSummarizer, Summarizer
+from summaries.summarizer import MockSummarizer, OllamaSummarizer, Summarizer
 from transcripts.repository import TranscriptRepository
 
 
 def get_summarizer(settings: Settings) -> Summarizer:
+    if settings.summary_backend == "mock":
+        return MockSummarizer()
+
     # Imported lazily so the SDK is only needed when a summary is actually generated.
     from ollama import AsyncClient
 

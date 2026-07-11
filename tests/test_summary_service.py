@@ -26,7 +26,12 @@ class _FakeSummarizer(Summarizer):
         self.calls.append(text)
         if self.error is not None:
             raise self.error
-        return Summary(text=HEBREW_SUMMARY, model="qwen2.5:7b-instruct")
+        return Summary(
+            text=HEBREW_SUMMARY,
+            model="qwen2.5:7b-instruct",
+            insights=("תובנה ראשונה.",),
+            risk_flags=("שינה מופרעת.",),
+        )
 
 
 class _FakeSummaryRepository:
@@ -44,6 +49,8 @@ class _FakeSummaryRepository:
             "meeting_id": meeting_id,
             "status": "pending",
             "text": None,
+            "insights": (),
+            "risk_flags": (),
             "model": "qwen2.5:7b-instruct",
             "error": None,
             "created_at": current.created_at if current else now,
@@ -61,8 +68,23 @@ class _FakeSummaryRepository:
     async def mark_running(self, meeting_id: uuid.UUID) -> StoredSummary:
         return self._row(meeting_id, status="running")
 
-    async def mark_ready(self, meeting_id: uuid.UUID, *, text: str, model: str) -> StoredSummary:
-        return self._row(meeting_id, status="ready", text=text, model=model)
+    async def mark_ready(
+        self,
+        meeting_id: uuid.UUID,
+        *,
+        text: str,
+        model: str,
+        insights: tuple[str, ...] = (),
+        risk_flags: tuple[str, ...] = (),
+    ) -> StoredSummary:
+        return self._row(
+            meeting_id,
+            status="ready",
+            text=text,
+            model=model,
+            insights=insights,
+            risk_flags=risk_flags,
+        )
 
     async def mark_failed(self, meeting_id: uuid.UUID, *, error: str) -> StoredSummary:
         return self._row(meeting_id, status="failed", error=error)
@@ -121,6 +143,8 @@ async def test_generate_marks_the_summary_ready_with_the_models_text() -> None:
     assert row.status == "ready"
     assert row.text == HEBREW_SUMMARY
     assert row.model == "qwen2.5:7b-instruct"
+    assert row.insights == ("תובנה ראשונה.",)
+    assert row.risk_flags == ("שינה מופרעת.",)
     assert repo.transitions == ["pending", "running", "ready"]
 
 

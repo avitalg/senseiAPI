@@ -101,4 +101,10 @@ class SummaryService:
             await self._summaries.mark_failed(meeting_id, error=str(exc))
             return
 
-        await self._summaries.mark_ready(meeting_id, text=summary.text, model=summary.model)
+        await self._summaries.mark_ready(
+            meeting_id,
+            text=summary.text,
+            model=summary.model,
+            insights=summary.insights,
+            risk_flags=summary.risk_flags,
+        )
