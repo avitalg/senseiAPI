@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import httpx
 from google import genai
@@ -11,27 +12,7 @@ from analysis.models import AnalysisFailedError, AnalysisResult
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """\
-You are a clinical AI assistant. Analyze the following therapy session transcript \
-and return a structured JSON object written entirely in Hebrew.
-
-Guidelines:
-- Base the analysis strictly on what is said in the transcript. Do not infer beyond it.
-- Do not provide medical diagnoses or express clinical certainty.
-
-Field definitions:
-- summary: A short, factual overview of the session (2–3 sentences).
-- insights: Key therapeutic observations from the session — emotional themes, \
-behavioral patterns, coping strategies, strengths, or recurring dynamics \
-that emerged in the conversation.
-- risk_flags: Clinically meaningful concerns that may require the therapist's \
-additional assessment, monitoring, follow-up, or intervention. \
-Do not repeat observations already listed in insights. \
-If no such concerns are present, return an empty list.
-
-Transcript:
-{transcript}
-"""
+_PROMPT_TEMPLATE = (Path(__file__).parent / "analysis_prompt.txt").read_text(encoding="utf-8")
 
 
 class _AnalysisSchema(BaseModel):
