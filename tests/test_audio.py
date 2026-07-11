@@ -1,4 +1,15 @@
+import uuid
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
+
+from main import app
+from calendar_events.models import CalendarEventNotFoundError
 from tests.conftest import DEFAULT_TRANSCRIPT, ClientFactory
+from transcripts.models import (
+    StoredTranscript,
+    TranscriptAlreadyExistsError,
+)
+from transcripts.service import TranscriptService
 
 
 def test_upload_audio_returns_201_and_persists_file(make_client: ClientFactory) -> None:
@@ -30,6 +41,8 @@ def test_upload_audio_returns_transcript(make_client: ClientFactory) -> None:
     body = res.json()
     assert body["language"] == "he"
     assert body["text"] == DEFAULT_TRANSCRIPT
+    assert body["meeting_id"] is None
+    assert body["transcript_id"] is None
 
 
 def test_upload_audio_accepts_m4a(make_client: ClientFactory) -> None:
@@ -138,3 +151,118 @@ def test_delete_audio_missing_returns_404(make_client: ClientFactory) -> None:
     client, _ = make_client()
     res = client.delete("/audio/does-not-exist.mp3")
     assert res.status_code == 404
+
+
+def _override_db_session() -> None:
+    from core.database import get_optional_db_session
+
+    async def _fake_db():
+        yield object()
+
+    app.dependency_overrides[get_optional_db_session] = _fake_db
+
+
+def _clear_db_override() -> None:
+    from core.database import get_optional_db_session
+
+    app.dependency_overrides.pop(get_optional_db_session, None)
+
+
+def test_upload_without_meeting_id_returns_400_when_db_configured(
+    make_client: ClientFactory,
+) -> None:
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={"patient_id": str(uuid.uuid4())},
+        )
+    finally:
+        _clear_db_override()
+    assert res.status_code == 400
+    assert "meeting_id" in res.json()["detail"]
+
+
+def test_upload_with_meeting_persists_via_transcript_service(
+    make_client: ClientFactory,
+    monkeypatch,
+) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    transcript_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    patient_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    saved = StoredTranscript(
+        id=transcript_id,
+        meeting_id=meeting_id,
+        raw_text=DEFAULT_TRANSCRIPT,
+        diarized_segments=[],
+        language="he",
+        created_at=datetime(2026, 7, 11, 12, 0, tzinfo=UTC),
+    )
+    mock_save = AsyncMock(return_value=saved)
+    monkeypatch.setattr(TranscriptService, "save_for_upload", mock_save)
+
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={
+                "patient_id": str(patient_id),
+                "meeting_id": str(meeting_id),
+            },
+        )
+    finally:
+        _clear_db_override()
+
+    assert res.status_code == 201
+    body = res.json()
+    assert body["meeting_id"] == str(meeting_id)
+    assert body["transcript_id"] == str(transcript_id)
+    mock_save.assert_awaited_once()
+    kwargs = mock_save.await_args.kwargs
+    assert kwargs["meeting_id"] == meeting_id
+    assert kwargs["patient_id"] == patient_id
+    assert kwargs["raw_text"] == DEFAULT_TRANSCRIPT
+
+
+def test_upload_unknown_meeting_returns_404(make_client: ClientFactory, monkeypatch) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    monkeypatch.setattr(
+        TranscriptService,
+        "save_for_upload",
+        AsyncMock(side_effect=CalendarEventNotFoundError(meeting_id)),
+    )
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={"meeting_id": str(meeting_id)},
+        )
+    finally:
+        _clear_db_override()
+    assert res.status_code == 404
+
+
+def test_upload_duplicate_transcript_returns_409(make_client: ClientFactory, monkeypatch) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    monkeypatch.setattr(
+        TranscriptService,
+        "save_for_upload",
+        AsyncMock(side_effect=TranscriptAlreadyExistsError(meeting_id)),
+    )
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={"meeting_id": str(meeting_id)},
+        )
+    finally:
+        _clear_db_override()
+    assert res.status_code == 409
