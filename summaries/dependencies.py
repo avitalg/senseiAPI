@@ -2,15 +2,26 @@ from core.config import Settings, get_settings
 from core.database import SessionDep, SettingsDep
 from summaries.repository import SummaryRepository
 from summaries.service import SummaryService
-from summaries.summarizer import MockSummarizer, OllamaSummarizer, Summarizer
+from summaries.summarizer import (
+    GeminiSummarizer,
+    MockSummarizer,
+    OllamaSummarizer,
+    Summarizer,
+)
 from transcripts.repository import TranscriptRepository
 
 
 def get_summarizer(settings: Settings) -> Summarizer:
+    """Pick the summarization backend. SDKs are imported lazily so only the selected
+    one is ever needed at runtime."""
     if settings.summary_backend == "mock":
         return MockSummarizer()
 
-    # Imported lazily so the SDK is only needed when a summary is actually generated.
+    if settings.summary_backend == "gemini":
+        if not settings.google_api_key:
+            raise RuntimeError("GOOGLE_API_KEY must be set when SUMMARY_BACKEND=gemini")
+        return GeminiSummarizer(settings.google_api_key, settings.gemini_model)
+
     from ollama import AsyncClient
 
     return OllamaSummarizer(

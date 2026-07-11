@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from audio import router as audio_router
 from calendar_events import router as calendar_router
-from core.config import Settings, get_settings
+from core.config import Settings, get_settings, validate_backends
 from core.database import close_database, init_database, ping_database
 from patients import router as patients_router
 from summaries import router as summaries_router
@@ -38,6 +38,7 @@ class ReadinessResponse(BaseModel):
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings_factory = app.dependency_overrides.get(get_settings, get_settings)
     settings = settings_factory()
+    validate_backends(settings)
     await init_database(settings)
     await sweep_interrupted_summaries(settings)
     yield

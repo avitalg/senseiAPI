@@ -3,13 +3,33 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+import httpx
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types
+
 from summaries.models import Summary, SummaryFailedError
-from summaries.prompt import SUMMARY_JSON_SCHEMA, THERAPIST_SUMMARY_SYSTEM_PROMPT
+from summaries.prompt import (
+    SUMMARY_JSON_SCHEMA,
+    THERAPIST_SUMMARY_SYSTEM_PROMPT,
+    SummarySchema,
+)
 
 if TYPE_CHECKING:
     from ollama import AsyncClient
 
 logger = logging.getLogger(__name__)
+
+_GEMINI_MODEL = "gemini-2.5-flash"
+
+# PR #5's prompt shape: the instructions and the transcript arrive as one `contents`
+# string, rather than as separate system/user messages.
+_PROMPT_TEMPLATE = f"""\
+{THERAPIST_SUMMARY_SYSTEM_PROMPT}
+
+תמליל:
+{{transcript}}
+"""
 
 
 class Summarizer(ABC):
@@ -70,6 +90,51 @@ def _parse(content: str, *, model: str) -> Summary:
         insights=tuple(payload.get("insights") or ()),
         risk_flags=tuple(payload.get("risk_flags") or ()),
     )
+
+
+class GeminiSummarizer(Summarizer):
+    """Summarization by Google Gemini. Ported from ``GeminiAnalyzer`` in PR #5.
+
+    Note what choosing this costs: the transcript leaves this host and is sent to
+    Google. That is a real trade against the Ollama backend, whose whole point is that
+    therapy transcripts (PHI) stay local. Gemini is markedly stronger at Hebrew and at
+    the clinical inference the risk flags now ask for — pick deliberately.
+    """
+
+    def __init__(self, api_key: str, model: str = _GEMINI_MODEL) -> None:
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+
+    async def summarize(self, *, text: str, language: str) -> Summary:
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=_PROMPT_TEMPLATE.format(transcript=text),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=SummarySchema,
+                ),
+            )
+        except (genai_errors.APIError, httpx.HTTPError) as exc:
+            logger.exception("gemini summarization failed")
+            raise SummaryFailedError(f"summarization failed: {exc}") from exc
+
+        parsed: SummarySchema | None = response.parsed  # type: ignore[assignment]
+        if parsed is None:
+            raise SummaryFailedError(
+                f"Gemini returned an unparseable response. Raw text: {response.text!r}"
+            )
+
+        summary_text = parsed.summary.strip()
+        if not summary_text:
+            raise SummaryFailedError("the model returned an empty summary")
+
+        return Summary(
+            text=summary_text,
+            model=self._model,
+            insights=tuple(parsed.insights),
+            risk_flags=tuple(parsed.risk_flags),
+        )
 
 
 class MockSummarizer(Summarizer):

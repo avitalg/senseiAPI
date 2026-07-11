@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core.config import Settings
+from core.config import Settings, validate_backends
 from transcription.dependencies import get_transcriber
 from transcription.models import Transcript, TranscriptionFailedError, Word
 from transcription.transcriber import ElevenLabsTranscriber, LocalWhisperTranscriber
@@ -169,8 +169,49 @@ def test_get_transcriber_returns_whisper_when_configured() -> None:
     assert isinstance(transcriber, LocalWhisperTranscriber)
 
 
-def test_get_transcriber_requires_api_key_for_elevenlabs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_elevenlabs_backend_without_an_api_key_fails_at_startup() -> None:
+    """Each field is individually valid; only the pair is wrong, so no type catches this.
+
+    ``validate_backends`` runs in the app's lifespan, so a misconfigured deploy dies at
+    boot rather than looking healthy until the first therapist uploads a session.
+    """
+    with pytest.raises(RuntimeError, match="ELEVENLABS_API_KEY"):
+        validate_backends(_settings(transcriber_backend="elevenlabs", elevenlabs_api_key=None))
+
+
+def test_gemini_backend_without_an_api_key_fails_at_startup() -> None:
+    with pytest.raises(RuntimeError, match="GOOGLE_API_KEY"):
+        validate_backends(
+            _settings(
+                transcriber_backend="whisper",
+                summary_backend="gemini",
+                google_api_key="",
+            )
+        )
+
+
+def test_a_fully_local_setup_needs_no_api_key_at_all() -> None:
+    """Whisper + Ollama must boot on a fresh clone with no .env and no credentials."""
+    validate_backends(
+        _settings(
+            transcriber_backend="whisper",
+            summary_backend="ollama",
+            elevenlabs_api_key=None,
+        )
+    )
+
+
+def test_whisper_backend_needs_no_api_key() -> None:
+    settings = _settings(transcriber_backend="whisper", elevenlabs_api_key=None)
+
+    assert isinstance(get_transcriber(settings), LocalWhisperTranscriber)
+
+
+def test_get_transcriber_still_guards_a_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Belt and braces: Settings can be built in ways that bypass the validator."""
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    settings = _settings(transcriber_backend="whisper", elevenlabs_api_key=None)
+    object.__setattr__(settings, "transcriber_backend", "elevenlabs")
 
     with pytest.raises(RuntimeError, match="ELEVENLABS_API_KEY"):
-        get_transcriber(_settings(elevenlabs_api_key=None))
+        get_transcriber(settings)

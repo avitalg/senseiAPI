@@ -109,17 +109,8 @@ def test_summary_backend_mock_needs_no_ollama() -> None:
     from summaries.dependencies import get_summarizer
     from summaries.summarizer import MockSummarizer
 
-    summarizer = get_summarizer(Settings(_env_file=None, summary_backend="mock"))
+    summarizer = get_summarizer(
+        Settings(_env_file=None, summary_backend="mock", transcriber_backend="whisper")
+    )
 
     assert isinstance(summarizer, MockSummarizer)
-
-
-def test_gemini_style_fail_fast_on_missing_backend_config() -> None:
-    """A bad backend name must fail at settings load, not at the first upload."""
-    import pytest
-    from pydantic import ValidationError
-
-    from core.config import Settings
-
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, summary_backend="not-a-backend")

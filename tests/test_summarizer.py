@@ -1,10 +1,14 @@
 import json
+from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
+from google import genai
 
 from summaries.models import Summary, SummaryFailedError
-from summaries.summarizer import MockSummarizer, OllamaSummarizer
+from summaries.prompt import SummarySchema
+from summaries.summarizer import GeminiSummarizer, MockSummarizer, OllamaSummarizer
 
 HEBREW_TRANSCRIPT = "מטפל: איך עבר עליך השבוע? מטופל: היה קשה, הרבה חרדה."
 
@@ -138,3 +142,94 @@ async def test_mock_summarizer_returns_canned_data_without_a_model() -> None:
     assert summary.text
     assert summary.insights
     assert summary.model == "mock"
+
+
+class _FakeGeminiModels:
+    def __init__(self, parsed: object = None, error: Exception | None = None) -> None:
+        self._parsed = parsed
+        self._error = error
+        self.calls: list[dict[str, Any]] = []
+
+    async def generate_content(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if self._error is not None:
+            raise self._error
+        return SimpleNamespace(parsed=self._parsed, text="raw text")
+
+
+class _FakeGeminiClient:
+    """Stands in for ``google.genai.Client``; ``.aio.models`` is the async surface."""
+
+    def __init__(self, parsed: object = None, error: Exception | None = None) -> None:
+        self.models = _FakeGeminiModels(parsed=parsed, error=error)
+        self.aio = SimpleNamespace(models=self.models)
+
+
+def _gemini(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    parsed: object = None,
+    error: Exception | None = None,
+) -> tuple[GeminiSummarizer, _FakeGeminiClient]:
+    """GeminiSummarizer builds its own client from an api_key (as PR #5 wrote it), so the
+    SDK constructor is patched here. No test ever reaches the network."""
+    fake = _FakeGeminiClient(parsed=parsed, error=error)
+    monkeypatch.setattr(genai, "Client", lambda **_: fake)
+    return GeminiSummarizer("fake-api-key", "gemini-2.5-flash"), fake
+
+
+@pytest.mark.anyio
+async def test_gemini_returns_structured_summary_insights_and_risk_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summarizer, _ = _gemini(
+        monkeypatch,
+        parsed=SummarySchema(
+            summary=MODEL_JSON["summary"],
+            insights=MODEL_JSON["insights"],
+            risk_flags=MODEL_JSON["risk_flags"],
+        ),
+    )
+
+    summary = await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+    assert summary == Summary(
+        text=MODEL_JSON["summary"],
+        insights=tuple(MODEL_JSON["insights"]),
+        risk_flags=tuple(MODEL_JSON["risk_flags"]),
+        model="gemini-2.5-flash",
+    )
+
+
+@pytest.mark.anyio
+async def test_gemini_constrains_the_response_to_a_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gemini's response_schema is the counterpart of Ollama's `format`."""
+    summarizer, fake = _gemini(
+        monkeypatch,
+        parsed=SummarySchema(summary="סיכום.", insights=[], risk_flags=[]),
+    )
+
+    await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+    config = fake.models.calls[0]["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema is SummarySchema
+    assert HEBREW_TRANSCRIPT in fake.models.calls[0]["contents"]
+
+
+@pytest.mark.anyio
+async def test_gemini_rejects_an_unparseable_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    summarizer, _ = _gemini(monkeypatch, parsed=None)
+
+    with pytest.raises(SummaryFailedError):
+        await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+
+@pytest.mark.anyio
+async def test_gemini_wraps_api_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    summarizer, _ = _gemini(monkeypatch, error=httpx.ConnectError("connection refused"))
+
+    with pytest.raises(SummaryFailedError):
+        await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")

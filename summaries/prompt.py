@@ -10,6 +10,8 @@ then fails; the schema is what keeps the output machine-readable.
 
 from typing import Any
 
+from pydantic import BaseModel
+
 THERAPIST_SUMMARY_SYSTEM_PROMPT = """\
 אתה עוזר תיעוד למטפל/ת בבריאות הנפש. קיבלת תמליל גולמי של פגישת טיפול אחת.
 המשימה שלך היא להפיק טיוטת סיכום פגישה בעברית, שהמטפל/ת יקרא ויערוך.
@@ -36,6 +38,19 @@ risk_flags
 
 הסיכום הוא טיוטה לעזר בלבד. הוא אינו רשומה רפואית ואינו כלי לאיתור סיכון.\
 """
+
+
+class SummarySchema(BaseModel):
+    """The contract both providers answer to.
+
+    Gemini takes it directly as a ``response_schema``; Ollama takes the JSON Schema
+    below. Defining it once is what keeps the two backends from drifting apart.
+    """
+
+    summary: str
+    insights: list[str]
+    risk_flags: list[str]
+
 
 # Ollama's equivalent of Gemini's response_schema: it constrains decoding to valid JSON.
 SUMMARY_JSON_SCHEMA: dict[str, Any] = {
