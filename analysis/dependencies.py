@@ -1,6 +1,7 @@
 from fastapi import Depends
 
-from analysis.analyzer import Analyzer, MockAnalyzer
+from analysis.analyzer import Analyzer
+from analysis.mock_analyzer import MockAnalyzer
 from analysis.service import AnalysisService
 from core.config import get_settings
 

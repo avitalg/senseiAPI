@@ -3,7 +3,8 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from analysis.analyzer import Analyzer, MockAnalyzer
+from analysis.analyzer import Analyzer
+from analysis.mock_analyzer import MockAnalyzer
 from analysis.dependencies import get_analyzer
 from analysis.models import AnalysisFailedError, AnalysisResult
 from main import app
