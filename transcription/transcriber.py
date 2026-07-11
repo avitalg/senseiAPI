@@ -3,14 +3,13 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi.concurrency import run_in_threadpool
 
 from transcription.models import Transcript, TranscriptionFailedError, Word
 
 if TYPE_CHECKING:
-    from elevenlabs.client import AsyncElevenLabs
     from faster_whisper import WhisperModel
 
 logger = logging.getLogger(__name__)
@@ -24,6 +23,15 @@ class Transcriber(ABC):
 
     @abstractmethod
     async def transcribe(self, *, data: bytes, filename: str, language: str) -> Transcript: ...
+
+
+class ElevenLabsSpeechToTextClient(Protocol):
+    async def convert(self, **kwargs: Any) -> Any: ...
+
+
+class ElevenLabsClient(Protocol):
+    @property
+    def speech_to_text(self) -> ElevenLabsSpeechToTextClient: ...
 
 
 @lru_cache(maxsize=4)
@@ -79,7 +87,7 @@ class LocalWhisperTranscriber(Transcriber):
 class ElevenLabsTranscriber(Transcriber):
     """Transcription via the ElevenLabs Speech-to-Text API (Scribe)."""
 
-    def __init__(self, *, client: "AsyncElevenLabs", model: str) -> None:
+    def __init__(self, *, client: ElevenLabsClient, model: str) -> None:
         self._client = client
         self._model = model
 

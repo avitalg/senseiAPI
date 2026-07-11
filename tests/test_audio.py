@@ -1,6 +1,9 @@
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
+
+import pytest
 
 from calendar_events.models import CalendarEventNotFoundError
 from main import app
@@ -156,7 +159,7 @@ def test_delete_audio_missing_returns_404(make_client: ClientFactory) -> None:
 def _override_db_session() -> None:
     from core.database import get_optional_db_session
 
-    async def _fake_db():
+    async def _fake_db() -> AsyncIterator[object]:
         yield object()
 
     app.dependency_overrides[get_optional_db_session] = _fake_db
@@ -187,7 +190,7 @@ def test_upload_without_meeting_id_returns_400_when_db_configured(
 
 def test_upload_with_meeting_persists_via_transcript_service(
     make_client: ClientFactory,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     transcript_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -224,7 +227,9 @@ def test_upload_with_meeting_persists_via_transcript_service(
     assert body["meeting_id"] == str(meeting_id)
     assert body["transcript_id"] == str(transcript_id)
     mock_save.assert_awaited_once()
-    kwargs = mock_save.await_args.kwargs
+    await_args = mock_save.await_args
+    assert await_args is not None
+    kwargs = await_args.kwargs
     assert kwargs["meeting_id"] == meeting_id
     assert kwargs["patient_id"] == patient_id
     assert kwargs["raw_text"] == DEFAULT_TRANSCRIPT
@@ -232,7 +237,7 @@ def test_upload_with_meeting_persists_via_transcript_service(
 
 def test_upload_schedules_a_summary_and_marks_it_pending(
     make_client: ClientFactory,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The pending row is written during the request, not by the background job: a client
     polling in the gap would otherwise get a 404 for a summary that is on its way."""
@@ -268,7 +273,10 @@ def test_upload_schedules_a_summary_and_marks_it_pending(
     mock_generate.assert_awaited_once_with(meeting_id)
 
 
-def test_upload_unknown_meeting_returns_404(make_client: ClientFactory, monkeypatch) -> None:
+def test_upload_unknown_meeting_returns_404(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     monkeypatch.setattr(
         TranscriptService,
@@ -288,7 +296,10 @@ def test_upload_unknown_meeting_returns_404(make_client: ClientFactory, monkeypa
     assert res.status_code == 404
 
 
-def test_upload_duplicate_transcript_returns_409(make_client: ClientFactory, monkeypatch) -> None:
+def test_upload_duplicate_transcript_returns_409(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     monkeypatch.setattr(
         TranscriptService,
