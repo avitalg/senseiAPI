@@ -39,6 +39,14 @@ class Settings(BaseSettings):
 
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True
+    # "ollama" runs a model locally (transcripts stay on this host); "gemini" sends the
+    # transcript to Google; "mock" returns canned data for frontend work and CI.
+    # Mock is opt-in on purpose: serving invented clinical content by default is not a
+    # mistake worth risking in a therapy product.
+    summary_backend: Literal["ollama", "gemini", "mock"] = "ollama"
+    # Required when summary_backend is "gemini".
+    google_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
     # Ollama defaults num_ctx to 2048 and silently truncates longer input, which would
@@ -63,6 +71,24 @@ class Settings(BaseSettings):
         "audio/x-flac",
         "audio/webm",
     )
+
+
+def validate_backends(settings: Settings) -> None:
+    """Reject a backend selected without the credential it needs.
+
+    Each field is valid on its own; only the pair is wrong, so no type can catch this.
+    Called at app startup so a misconfigured deploy dies at boot rather than looking
+    healthy until the first therapist uploads a session.
+
+    Deliberately not a pydantic ``model_validator``: that would make ``Settings()``
+    itself unconstructible without an API key, which breaks a fresh clone and CI.
+    """
+    if settings.transcriber_backend == "elevenlabs" and not settings.elevenlabs_api_key:
+        raise RuntimeError("ELEVENLABS_API_KEY must be set when TRANSCRIBER_BACKEND=elevenlabs")
+
+    gemini_selected = settings.summary_enabled and settings.summary_backend == "gemini"
+    if gemini_selected and not settings.google_api_key:
+        raise RuntimeError("GOOGLE_API_KEY must be set when SUMMARY_BACKEND=gemini")
 
 
 @lru_cache

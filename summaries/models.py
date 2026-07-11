@@ -20,10 +20,17 @@ class SummaryNotFoundError(Exception):
 
 @dataclass(frozen=True)
 class Summary:
-    """A generated session summary and the model that wrote it."""
+    """A generated session summary and the model that wrote it.
+
+    ``insights`` and ``risk_flags`` are separate fields rather than headings inside
+    ``text`` so a client can render them on their own — a risk flag is not something a
+    therapist should have to find by scanning prose.
+    """
 
     text: str
     model: str
+    insights: tuple[str, ...] = ()
+    risk_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -38,3 +45,5 @@ class StoredSummary:
     error: str | None
     created_at: datetime
     updated_at: datetime
+    insights: tuple[str, ...] = ()
+    risk_flags: tuple[str, ...] = ()

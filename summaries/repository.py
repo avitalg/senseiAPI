@@ -13,6 +13,8 @@ def to_summary(record: SummaryRecord) -> StoredSummary:
         meeting_id=record.meeting_id,
         status=record.status,  # type: ignore[arg-type]
         text=record.text,
+        insights=tuple(record.insights or ()),
+        risk_flags=tuple(record.risk_flags or ()),
         model=record.model,
         error=record.error,
         created_at=record.created_at,
@@ -44,6 +46,8 @@ class SummaryRepository:
             # Re-requesting a summary resets the row rather than stacking a second one.
             record.status = "pending"
             record.text = None
+            record.insights = []
+            record.risk_flags = []
             record.error = None
         return await self._save(record)
 
@@ -54,12 +58,22 @@ class SummaryRepository:
         record.status = "running"
         return await self._save(record)
 
-    async def mark_ready(self, meeting_id: uuid.UUID, *, text: str, model: str) -> StoredSummary:
+    async def mark_ready(
+        self,
+        meeting_id: uuid.UUID,
+        *,
+        text: str,
+        model: str,
+        insights: tuple[str, ...] = (),
+        risk_flags: tuple[str, ...] = (),
+    ) -> StoredSummary:
         record = await self._record_for(meeting_id)
         if record is None:
             record = SummaryRecord(meeting_id=meeting_id)
         record.status = "ready"
         record.text = text
+        record.insights = list(insights)
+        record.risk_flags = list(risk_flags)
         record.model = model
         record.error = None
         return await self._save(record)

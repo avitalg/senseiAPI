@@ -40,6 +40,31 @@ so switching backends never changes the API response.
 Startup fails if `TRANSCRIBER_BACKEND=elevenlabs` and no API key is set, rather
 than silently downgrading to Whisper.
 
+## Session summaries
+
+After a transcript is stored, a background job summarises the session into Hebrew
+notes: a short `summary`, a list of `insights`, and a list of `risk_flags`. Fetch them
+with `GET /meetings/{meeting_id}/summary` — 202 while it is still generating, 200 with
+the notes when ready, and 200 with an `error` if generation failed.
+
+| Backend | `SUMMARY_BACKEND` | Notes |
+| --- | --- | --- |
+| Local Qwen via Ollama | `ollama` (default) | Runs on this host, so transcripts (PHI) never leave it. Needs `ollama pull qwen2.5:7b-instruct`. |
+| Google Gemini | `gemini` | Stronger Hebrew and clinical inference, but **the transcript is sent to Google**. Needs `GOOGLE_API_KEY`. |
+| Mock | `mock` | Canned data, no model required. For frontend work and CI. |
+
+Choosing `gemini` trades the privacy property the local backend exists to provide:
+therapy transcripts are PHI, and Gemini means they leave the machine. Pick deliberately.
+
+A backend selected without its credential fails at **startup**, not at the first upload,
+so a misconfigured deploy never looks healthy.
+
+Mock is opt-in on purpose: serving invented clinical content by default is not a
+mistake worth risking in a therapy product.
+
+The summary is a drafting aid the therapist reviews. It is not a clinical record, and
+it must never be relied on to catch a risk disclosure.
+
 ## Local database
 
 Start PostgreSQL with Docker Compose:

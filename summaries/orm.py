@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -21,6 +22,8 @@ class SummaryRecord(Base):
     )
     status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    insights: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    risk_flags: Mapped[list[str]] = mapped_column(JSONB, default=list)
     model: Mapped[str] = mapped_column(String(64), default="", server_default="")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

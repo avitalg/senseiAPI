@@ -83,3 +83,34 @@ def test_missing_summary_returns_404() -> None:
     res = client.get(f"/meetings/{MEETING_ID}/summary")
 
     assert res.status_code == 404
+
+
+def test_ready_summary_returns_insights_and_risk_flags() -> None:
+    """The calendar renders risk flags on their own, so they must not be buried in prose."""
+    client = _client(
+        _stored(
+            "ready",
+            text="סיכום קצר.",
+            insights=["תובנה ראשונה."],
+            risk_flags=["שינה מופרעת."],
+        )
+    )
+
+    res = client.get(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["insights"] == ["תובנה ראשונה."]
+    assert body["risk_flags"] == ["שינה מופרעת."]
+
+
+def test_summary_backend_mock_needs_no_ollama() -> None:
+    from core.config import Settings
+    from summaries.dependencies import get_summarizer
+    from summaries.summarizer import MockSummarizer
+
+    summarizer = get_summarizer(
+        Settings(_env_file=None, summary_backend="mock", transcriber_backend="whisper")
+    )
+
+    assert isinstance(summarizer, MockSummarizer)
