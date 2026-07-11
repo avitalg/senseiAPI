@@ -15,7 +15,7 @@ def get_analyzer() -> Analyzer:
 
     if backend == "gemini":
         from analysis.gemini_analyzer import GeminiAnalyzer
-        return GeminiAnalyzer(settings.google_api_key)
+        return GeminiAnalyzer(settings.google_api_key, settings.gemini_model)
 
     raise ValueError(f"Unknown ANALYZER_BACKEND: {backend!r}. Expected 'mock' or 'gemini'.")
 

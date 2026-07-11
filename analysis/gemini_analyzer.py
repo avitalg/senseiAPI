@@ -11,8 +11,6 @@ from analysis.models import AnalysisFailedError, AnalysisResult
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "gemini-2.5-flash"
-
 _PROMPT_TEMPLATE = """\
 You are a clinical AI assistant. Analyze the following therapy session transcript \
 and return a structured JSON object written entirely in Hebrew.
@@ -43,13 +41,14 @@ class _AnalysisSchema(BaseModel):
 
 
 class GeminiAnalyzer(Analyzer):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, model: str) -> None:
         self._client = genai.Client(api_key=api_key)
+        self._model = model
 
     async def analyze(self, transcript: str) -> AnalysisResult:
         try:
             response = await self._client.aio.models.generate_content(
-                model=_MODEL,
+                model=self._model,
                 contents=_PROMPT_TEMPLATE.format(transcript=transcript),
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",

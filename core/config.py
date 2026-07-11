@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Analysis backend: "mock" (default) or "gemini".
     analyzer_backend: str = "mock"
     google_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     # Comma-separated browser origins allowed to call the API (e.g. the Vite frontend).
     cors_origins: str = ""
 
