@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -152,9 +152,15 @@ async def test_whisper_transcribe_returns_word_timestamps() -> None:
     assert model.calls[0]["word_timestamps"] is True
 
 
-def _settings(**overrides: Any) -> Settings:
-    # ``_env_file=None`` keeps a developer's local .env out of these assertions.
-    return Settings(_env_file=None, **overrides)
+def _settings(
+    *,
+    transcriber_backend: Literal["elevenlabs", "whisper"] = "elevenlabs",
+    elevenlabs_api_key: str | None = None,
+) -> Settings:
+    return Settings(
+        transcriber_backend=transcriber_backend,
+        elevenlabs_api_key=elevenlabs_api_key,
+    )
 
 
 def test_get_transcriber_defaults_to_elevenlabs() -> None:

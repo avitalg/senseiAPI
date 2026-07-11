@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
@@ -22,8 +23,14 @@ class _FakeOllamaClient:
         self._error = error
         self.calls: list[dict[str, Any]] = []
 
-    async def chat(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(kwargs)
+    async def chat(
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, str]],
+        *,
+        options: Mapping[str, int],
+    ) -> dict[str, Any]:
+        self.calls.append({"model": model, "messages": messages, "options": options})
         if self._error is not None:
             raise self._error
         return {"message": {"content": self._content}}

@@ -1,14 +1,22 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
 from summaries.models import Summary, SummaryFailedError
 from summaries.prompt import THERAPIST_SUMMARY_SYSTEM_PROMPT
 
-if TYPE_CHECKING:
-    from ollama import AsyncClient
-
 logger = logging.getLogger(__name__)
+
+
+class OllamaClient(Protocol):
+    async def chat(
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, str]],
+        *,
+        options: Mapping[str, int],
+    ) -> Any: ...
 
 
 class Summarizer(ABC):
@@ -21,7 +29,7 @@ class Summarizer(ABC):
 class OllamaSummarizer(Summarizer):
     """Summarization by a local model served by Ollama (Qwen by default)."""
 
-    def __init__(self, *, client: "AsyncClient", model: str, num_ctx: int) -> None:
+    def __init__(self, *, client: OllamaClient, model: str, num_ctx: int) -> None:
         self._client = client
         self._model = model
         self._num_ctx = num_ctx
