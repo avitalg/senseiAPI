@@ -9,8 +9,10 @@ from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
 from audio import router as audio_router
+from auth.router import get_current_user
+from auth.router import router as auth_router
 from calendar_events import router as calendar_router
-from core.config import Settings, get_settings
+from core.config import Settings, get_settings, validate_startup_settings
 from core.database import close_database, init_database, ping_database
 from patients import router as patients_router
 from summaries import router as summaries_router
@@ -38,6 +40,7 @@ class ReadinessResponse(BaseModel):
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings_factory = app.dependency_overrides.get(get_settings, get_settings)
     settings = settings_factory()
+    validate_startup_settings(settings)
     await init_database(settings)
     await sweep_interrupted_summaries(settings)
     yield
@@ -58,10 +61,11 @@ if _cors_origins:
         allow_headers=["*"],
     )
 
-app.include_router(audio_router)
-app.include_router(calendar_router)
-app.include_router(patients_router)
-app.include_router(summaries_router)
+app.include_router(auth_router)
+app.include_router(audio_router, dependencies=[Depends(get_current_user)])
+app.include_router(calendar_router, dependencies=[Depends(get_current_user)])
+app.include_router(patients_router, dependencies=[Depends(get_current_user)])
+app.include_router(summaries_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/", response_model=RootResponse)

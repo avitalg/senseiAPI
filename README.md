@@ -77,6 +77,7 @@ rm -rf .docker/postgres_data
 
 ```bash
 docker compose up -d db
+export ENABLE_SECURITY=true  # enable/disable authentication
 uvicorn main:app --reload
 ```
 
