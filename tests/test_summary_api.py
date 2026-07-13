@@ -1,14 +1,24 @@
+import sys
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 
+from core.config import Settings, get_settings
+from core.database import get_db_session
 from main import app
-from summaries.dependencies import get_summary_reader
+from summaries.dependencies import get_summary_reader, get_summary_service
 from summaries.models import StoredSummary, SummaryStatus
+from transcripts.models import StoredTranscript
 
 MEETING_ID = uuid.uuid4()
 HEBREW_SUMMARY = "## נושאים מרכזיים\nחרדה במהלך השבוע."
+
+__import__("summaries.router")
 
 
 def _stored(status: SummaryStatus, **changes: object) -> StoredSummary:
@@ -33,6 +43,52 @@ class _FakeReader:
 
     async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredSummary | None:
         return self._summary
+
+
+class _FakeSummaryService:
+    def __init__(self, summary: StoredSummary | None = None) -> None:
+        self.summary = summary or _stored("pending")
+        self.get = AsyncMock(return_value=summary)
+        self.create_pending = AsyncMock(return_value=self.summary)
+
+
+class _FakeTranscriptRepo:
+    def __init__(self, *, has_transcript: bool = True) -> None:
+        self.has_transcript = has_transcript
+
+    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredTranscript | None:
+        if not self.has_transcript:
+            return None
+        return StoredTranscript(
+            id=uuid.uuid4(),
+            meeting_id=meeting_id,
+            raw_text="טקסט",
+            diarized_segments=[],
+            language="he",
+            created_at=datetime.now(UTC),
+        )
+
+
+async def _fake_db_session() -> AsyncIterator[object]:
+    yield object()
+
+
+@pytest.fixture(autouse=True)
+def _secure_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(
+        upload_dir=tmp_path / "uploads",
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+        summary_enabled=True,
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_db_session] = _fake_db_session
+    monkeypatch.setattr(
+        sys.modules["summaries.router"],
+        "run_summary_generation",
+        AsyncMock(),
+    )
 
 
 def _client(summary: StoredSummary | None) -> TestClient:
@@ -83,3 +139,54 @@ def test_missing_summary_returns_404() -> None:
     res = client.get(f"/meetings/{MEETING_ID}/summary")
 
     assert res.status_code == 404
+
+
+def test_post_starts_summary_when_transcript_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    pending = _stored("pending")
+    svc = _FakeSummaryService(None)
+    svc.get = AsyncMock(return_value=None)
+    svc.create_pending = AsyncMock(return_value=pending)
+    app.dependency_overrides[get_summary_service] = lambda: svc
+    monkeypatch.setattr(
+        sys.modules["summaries.router"],
+        "TranscriptRepository",
+        lambda session: _FakeTranscriptRepo(has_transcript=True),
+    )
+
+    client = TestClient(app)
+    res = client.post(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 202
+    assert res.json()["status"] == "pending"
+    svc.create_pending.assert_awaited_once_with(MEETING_ID)
+
+
+def test_post_without_transcript_returns_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    svc = _FakeSummaryService(None)
+    svc.get = AsyncMock(return_value=None)
+    app.dependency_overrides[get_summary_service] = lambda: svc
+    monkeypatch.setattr(
+        sys.modules["summaries.router"],
+        "TranscriptRepository",
+        lambda session: _FakeTranscriptRepo(has_transcript=False),
+    )
+
+    client = TestClient(app)
+    res = client.post(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 404
+    svc.create_pending.assert_not_awaited()
+
+
+def test_post_returns_inflight_without_reset() -> None:
+    running = _stored("running")
+    svc = _FakeSummaryService(running)
+    svc.get = AsyncMock(return_value=running)
+    app.dependency_overrides[get_summary_service] = lambda: svc
+
+    client = TestClient(app)
+    res = client.post(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 202
+    assert res.json()["status"] == "running"
+    svc.create_pending.assert_not_awaited()

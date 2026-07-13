@@ -26,6 +26,9 @@ class PatientService:
     async def list_patients(self) -> list[Patient]:
         return await self._repository.list_all()
 
+    async def get_patient(self, patient_id: uuid.UUID) -> Patient:
+        return await self._repository.get(patient_id)
+
     async def update_patient(self, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
         return await self._repository.update(patient_id, updates)
 

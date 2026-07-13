@@ -53,7 +53,12 @@ def make_client(tmp_path: Path) -> Iterator[ClientFactory]:
         database_url: str | None = None,
     ) -> tuple[TestClient, Settings]:
         upload_dir = tmp_path / "uploads"
-        settings = Settings(upload_dir=upload_dir)
+        # Isolate from the developer's local .env (ENABLE_SECURITY / secrets).
+        settings = Settings(
+            upload_dir=upload_dir,
+            enable_security=False,
+            auth_token_secret_key=None,
+        )
         if auth_token_secret_key is not None:
             settings.auth_token_secret_key = auth_token_secret_key
             settings.enable_security = True

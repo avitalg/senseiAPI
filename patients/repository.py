@@ -42,6 +42,12 @@ class PatientRepository:
         )
         return [_to_patient(record) for record in result.scalars().all()]
 
+    async def get(self, patient_id: uuid.UUID) -> Patient:
+        record = await self._session.get(PatientRecord, patient_id)
+        if record is None:
+            raise PatientNotFoundError(patient_id)
+        return _to_patient(record)
+
     async def update(self, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
         record = await self._session.get(PatientRecord, patient_id)
         if record is None:

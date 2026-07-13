@@ -54,18 +54,35 @@ OptionalSessionDep = Annotated[AsyncSession | None, Depends(get_optional_db_sess
 
 
 async def init_database(settings: Settings) -> None:
-    """Create tables for all imported ORM models."""
+    """Create tables for all imported ORM models.
+
+    ``create_all`` does not alter existing tables. If a stale ``users`` stub is
+    missing auth columns (pre-security schema), recreate that table so
+    register/token do not fail with 502.
+    """
     if not settings.database_url:
         return
 
     import auth.orm  # noqa: F401
     import calendar_events.orm  # noqa: F401
     import patients.orm  # noqa: F401
+    import reports.orm  # noqa: F401
     import summaries.orm  # noqa: F401
     import transcripts.orm  # noqa: F401
 
     engine = get_engine(settings.database_url)
     async with engine.begin() as conn:
+        users_cols = (
+            await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'users'"
+                )
+            )
+        ).scalars().all()
+        if users_cols and "password_hash" not in set(users_cols):
+            await conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+
         await conn.run_sync(Base.metadata.create_all)
 
 

@@ -1,0 +1,54 @@
+from summaries.format import normalize_summary_output, summary_json_to_markdown
+
+
+def test_summary_json_to_markdown_uses_hebrew_headings() -> None:
+    md = summary_json_to_markdown(
+        {
+            "main_topics": "חרדה בעבודה",
+            "therapist_interventions": "שיקוף ונשימה",
+            "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",
+            "follow_up": ["שינה", "ויסות"],
+        }
+    )
+    assert "## נושאים מרכזיים" in md
+    assert "חרדה בעבודה" in md
+    assert "## המשך ומעקב" in md
+    assert "- שינה" in md
+    assert "- ויסות" in md
+
+
+def test_normalize_summary_output_parses_json() -> None:
+    raw = """\
+{
+  "main_topics": "נושא",
+  "therapist_interventions": "התערבות",
+  "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",
+  "follow_up": ["מעקב"]
+}
+"""
+    md = normalize_summary_output(raw)
+    assert md.startswith("## נושאים מרכזיים")
+    assert "- מעקב" in md
+
+
+def test_normalize_summary_output_keeps_markdown_passthrough() -> None:
+    raw = "## נושאים מרכזיים\nחרדה במהלך השבוע."
+    assert normalize_summary_output(raw) == raw
+
+
+def test_normalize_summary_output_recovers_nested_object() -> None:
+    """Broken outer JSON + clean inner summary object (seen in production)."""
+    raw = (
+        '{\n'
+        '  "main_topics": "עברית לא סגורה PTSD描述：\n\n'
+        '{\n'
+        '  "main_topics": "שינה וחרדה",\n'
+        '  "therapist_interventions": "נשימה",\n'
+        '  "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",\n'
+        '  "follow_up": ["מעקב שינה"]\n'
+        '}\n'
+    )
+    md = normalize_summary_output(raw)
+    assert md.startswith("## נושאים מרכזיים")
+    assert "שינה וחרדה" in md
+    assert "- מעקב שינה" in md

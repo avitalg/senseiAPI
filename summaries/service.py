@@ -42,6 +42,23 @@ async def fail_interrupted_summaries(summaries: SummaryRepository) -> int:
     return len(stranded)
 
 
+async def run_summary_generation(meeting_id: uuid.UUID, settings: "Settings") -> None:
+    """Background entrypoint — opens its own session (request session is closed)."""
+    if not settings.database_url or not settings.summary_enabled:
+        return
+    from summaries.dependencies import get_summarizer
+
+    sessionmaker = get_sessionmaker(settings.database_url)
+    async with sessionmaker() as session:
+        service = SummaryService(
+            summaries=SummaryRepository(session),
+            transcripts=TranscriptRepository(session),
+            summarizer=get_summarizer(settings),
+            max_transcript_chars=settings.max_transcript_chars,
+        )
+        await service.generate(meeting_id)
+
+
 class SummaryService:
     """Generates a session summary from a stored transcript.
 
@@ -64,6 +81,9 @@ class SummaryService:
 
     async def create_pending(self, meeting_id: uuid.UUID) -> StoredSummary:
         return await self._summaries.create_pending(meeting_id)
+
+    async def get(self, meeting_id: uuid.UUID) -> StoredSummary | None:
+        return await self._summaries.get_by_meeting_id(meeting_id)
 
     async def generate(self, meeting_id: uuid.UUID) -> None:
         transcript = await self._transcripts.get_by_meeting_id(meeting_id)

@@ -28,6 +28,7 @@ from calendar_events.models import CalendarEventNotFoundError
 from core.database import OptionalSessionDep, SettingsDep
 from patients.models import PatientNotFoundError
 from summaries.dependencies import build_summary_service
+from summaries.service import run_summary_generation
 from transcription.errors import raise_for_transcription_error
 from transcription.models import TranscriptionFailedError
 from transcription.schemas import TranscriptionResponse
@@ -113,7 +114,7 @@ async def upload_audio(
             # background job: a client polling in the gap between this response and the
             # job starting would otherwise get a 404 for a summary that is on its way.
             await summary_service.create_pending(stored.meeting_id)
-            background_tasks.add_task(summary_service.generate, stored.meeting_id)
+            background_tasks.add_task(run_summary_generation, stored.meeting_id, settings)
 
     return AudioUploadResponse.from_upload(
         saved,
