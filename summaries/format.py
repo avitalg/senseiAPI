@@ -32,25 +32,49 @@ def _as_str_list(value: Any) -> list[str]:
     return [text] if text else []
 
 
+# Split prose into discrete items: on newlines, list separators, and sentence
+# terminators. Models return `main_topics`/`interventions` as free text, so this
+# turns a paragraph into scannable bullets instead of one giant line.
+_SEGMENT_SPLIT = re.compile(r"(?<=[.!?])\s+|[\n;•·]+")
+_LEADING_MARKER = re.compile(r"^(?:[-*•·]\s*|\d+[.)]\s*)")
+
+
+def _as_bullet_items(value: Any) -> list[str]:
+    """Coerce a value into discrete items; keep list items, split prose strings."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    items: list[str] = []
+    for chunk in _SEGMENT_SPLIT.split(str(value)):
+        cleaned = _LEADING_MARKER.sub("", chunk.strip()).strip()
+        if cleaned:
+            items.append(cleaned)
+    return items
+
+
+def _bullet_block(items: list[str], empty: str) -> str:
+    return "\n".join(f"- {item}" for item in items) if items else empty
+
+
 def summary_json_to_markdown(data: dict[str, Any]) -> str:
     """Render structured summary JSON into the Hebrew ## sections the UI expects."""
-    topics = _as_str(data.get("main_topics") or data.get("topics"))
-    interventions = _as_str(
+    topics = _as_bullet_items(data.get("main_topics") or data.get("topics"))
+    interventions = _as_bullet_items(
         data.get("therapist_interventions") or data.get("interventions")
     )
     risk = _as_str(data.get("risk_signs") or data.get("risk"))
     follow = _as_str_list(data.get("follow_up") or data.get("followup"))
-    follow_block = "\n".join(f"- {item}" for item in follow) if follow else "לא עלה בפגישה"
 
     return (
         "## נושאים מרכזיים\n"
-        f"{topics or 'לא עלה בפגישה'}\n\n"
+        f"{_bullet_block(topics, 'לא עלה בפגישה')}\n\n"
         "## התערבויות המטפל/ת\n"
-        f"{interventions or 'לא עלה בפגישה'}\n\n"
+        f"{_bullet_block(interventions, 'לא עלה בפגישה')}\n\n"
         "## סימני סיכון\n"
         f"{risk or 'לא נאמרו אמירות מפורשות של סיכון'}\n\n"
         "## המשך ומעקב\n"
-        f"{follow_block}"
+        f"{_bullet_block(follow, 'לא עלה בפגישה')}"
     ).strip()
 
 

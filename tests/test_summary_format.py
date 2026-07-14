@@ -17,6 +17,24 @@ def test_summary_json_to_markdown_uses_hebrew_headings() -> None:
     assert "- ויסות" in md
 
 
+def test_summary_json_to_markdown_splits_prose_into_bullets() -> None:
+    md = summary_json_to_markdown(
+        {
+            "main_topics": "המטופל הגיע עם חרדה בעבודה. נדונו דפוסי שינה; שימוש בכלי ויסות.",
+            "therapist_interventions": "שוקף החרדה. חודדה טכניקת נשימה.",
+            "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",
+            "follow_up": ["מעקב שינה"],
+        }
+    )
+    assert "- המטופל הגיע עם חרדה בעבודה." in md
+    assert "- נדונו דפוסי שינה" in md
+    assert "- שימוש בכלי ויסות." in md
+    assert "- שוקף החרדה." in md
+    assert "- חודדה טכניקת נשימה." in md
+    # Risk stays as a single prose line (not bulleted).
+    assert "- לא נאמרו" not in md
+
+
 def test_normalize_summary_output_parses_json() -> None:
     raw = """\
 {

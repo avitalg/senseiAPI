@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:7b-instruct"
+    ollama_model: str = "llama3.1:latest"
     # Ollama defaults num_ctx to 2048 and silently truncates longer input, which would
     # summarise only the opening minutes of a session. Set it explicitly.
     ollama_num_ctx: int = 32768
