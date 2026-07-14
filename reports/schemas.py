@@ -13,6 +13,7 @@ class NextMeetingReportResponse(BaseModel):
     open_topics: list[str] | None = None
     source_meeting_ids: list[str] | None = None
     last_summary_excerpt: str | None = None
+    generated_at: str | None = None
     model: str | None = None
     error: str | None = None
 
@@ -31,6 +32,7 @@ class NextMeetingReportResponse(BaseModel):
             open_topics=list(report.open_topics) if report.open_topics is not None else [],
             source_meeting_ids=[str(mid) for mid in report.source_meeting_ids],
             last_summary_excerpt=last_summary_excerpt,
+            generated_at=(report.updated_at.isoformat() if report.updated_at else None),
             model=report.model or None,
             error=report.error,
         )

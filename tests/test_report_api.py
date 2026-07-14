@@ -150,6 +150,34 @@ def test_get_ready_report_returns_200_with_sections() -> None:
     assert body["last_summary_excerpt"]
 
 
+def test_get_ready_report_includes_generated_at() -> None:
+    generated = datetime(2026, 7, 14, 9, 30, tzinfo=UTC)
+    report = _stored("ready", intro="סקירה", updated_at=generated)
+    client = _client(report=report)
+
+    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+
+    assert res.status_code == 200
+    assert res.json()["generated_at"] == generated.isoformat()
+
+
+def test_generated_at_tracks_regeneration() -> None:
+    """After a regenerate, the row's updated_at moves forward and so does the field."""
+    before = datetime(2026, 7, 14, 9, 30, tzinfo=UTC)
+    after = datetime(2026, 7, 14, 10, 45, tzinfo=UTC)
+
+    first = _client(report=_stored("ready", updated_at=before))
+    first_body = first.get(f"/patients/{PATIENT_ID}/next-meeting-report").json()
+
+    # Re-registering overrides simulates the row after a regenerate cycle.
+    second = _client(report=_stored("ready", updated_at=after))
+    second_body = second.get(f"/patients/{PATIENT_ID}/next-meeting-report").json()
+
+    assert first_body["generated_at"] == before.isoformat()
+    assert second_body["generated_at"] == after.isoformat()
+    assert first_body["generated_at"] != second_body["generated_at"]
+
+
 def test_get_running_report_returns_202() -> None:
     client = _client(report=_stored("running"))
 
