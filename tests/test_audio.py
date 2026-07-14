@@ -13,6 +13,7 @@ from tests.conftest import DEFAULT_TRANSCRIPT, ClientFactory
 from transcripts.models import (
     StoredTranscript,
     TranscriptAlreadyExistsError,
+    TranscriptNotFoundError,
 )
 from transcripts.service import TranscriptService
 
@@ -159,18 +160,20 @@ def test_delete_audio_missing_returns_404(make_client: ClientFactory) -> None:
 
 
 def _override_db_session() -> None:
-    from core.database import get_optional_db_session
+    from core.database import get_db_session, get_optional_db_session
 
     async def _fake_db() -> AsyncIterator[object]:
         yield object()
 
     app.dependency_overrides[get_optional_db_session] = _fake_db
+    app.dependency_overrides[get_db_session] = _fake_db
 
 
 def _clear_db_override() -> None:
-    from core.database import get_optional_db_session
+    from core.database import get_db_session, get_optional_db_session
 
     app.dependency_overrides.pop(get_optional_db_session, None)
+    app.dependency_overrides.pop(get_db_session, None)
 
 
 def test_upload_without_meeting_id_returns_400_when_db_configured(
@@ -321,3 +324,153 @@ def test_upload_duplicate_transcript_returns_409(
     finally:
         _clear_db_override()
     assert res.status_code == 409
+
+
+def test_upload_append_merges_transcript(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    transcript_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    merged = "טקסט קיים\n\n" + DEFAULT_TRANSCRIPT
+    saved = StoredTranscript(
+        id=transcript_id,
+        meeting_id=meeting_id,
+        raw_text=merged,
+        diarized_segments=[],
+        language="he",
+        created_at=datetime(2026, 7, 11, 12, 0, tzinfo=UTC),
+    )
+    mock_append = AsyncMock(return_value=saved)
+    monkeypatch.setattr(TranscriptService, "append_for_upload", mock_append)
+    monkeypatch.setattr(SummaryRepository, "create_pending", AsyncMock())
+    monkeypatch.setattr(_audio_router, "run_summary_generation", AsyncMock())
+
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={"meeting_id": str(meeting_id), "transcript_mode": "append"},
+        )
+    finally:
+        _clear_db_override()
+
+    assert res.status_code == 201
+    body = res.json()
+    assert body["transcript_id"] == str(transcript_id)
+    assert body["text"] == merged
+    mock_append.assert_awaited_once()
+
+
+def test_upload_append_without_transcript_returns_404(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    monkeypatch.setattr(
+        TranscriptService,
+        "append_for_upload",
+        AsyncMock(side_effect=TranscriptNotFoundError(meeting_id)),
+    )
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={"meeting_id": str(meeting_id), "transcript_mode": "append"},
+        )
+    finally:
+        _clear_db_override()
+    assert res.status_code == 404
+
+
+def test_upload_replace_returns_new_transcript(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    new_id = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
+    saved = StoredTranscript(
+        id=new_id,
+        meeting_id=meeting_id,
+        raw_text=DEFAULT_TRANSCRIPT,
+        diarized_segments=[],
+        language="he",
+        created_at=datetime(2026, 7, 11, 12, 0, tzinfo=UTC),
+    )
+    mock_replace = AsyncMock(return_value=saved)
+    monkeypatch.setattr(TranscriptService, "replace_for_upload", mock_replace)
+    monkeypatch.setattr(SummaryRepository, "create_pending", AsyncMock())
+    monkeypatch.setattr(_audio_router, "run_summary_generation", AsyncMock())
+
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.post(
+            "/audio/upload",
+            files={"file": ("song.mp3", b"fake-audio-bytes", "audio/mpeg")},
+            data={"meeting_id": str(meeting_id), "transcript_mode": "replace"},
+        )
+    finally:
+        _clear_db_override()
+
+    assert res.status_code == 201
+    body = res.json()
+    assert body["transcript_id"] == str(new_id)
+    assert body["text"] == DEFAULT_TRANSCRIPT
+    mock_replace.assert_awaited_once()
+
+
+def test_get_meeting_transcript_returns_200(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    transcript_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    stored = StoredTranscript(
+        id=transcript_id,
+        meeting_id=meeting_id,
+        raw_text="שורה ראשונה. שורה שנייה.",
+        diarized_segments=[],
+        language="he",
+        created_at=datetime(2026, 7, 11, 12, 0, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        TranscriptService,
+        "get_by_meeting_id",
+        AsyncMock(return_value=stored),
+    )
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.get(f"/meetings/{meeting_id}/transcript")
+    finally:
+        _clear_db_override()
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["meeting_id"] == str(meeting_id)
+    assert body["transcript_id"] == str(transcript_id)
+    assert "שורה ראשונה" in body["excerpt"]
+
+
+def test_get_meeting_transcript_returns_404_when_missing(
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    monkeypatch.setattr(
+        TranscriptService,
+        "get_by_meeting_id",
+        AsyncMock(return_value=None),
+    )
+    _override_db_session()
+    try:
+        client, _ = make_client()
+        res = client.get(f"/meetings/{meeting_id}/transcript")
+    finally:
+        _clear_db_override()
+    assert res.status_code == 404

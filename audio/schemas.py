@@ -37,6 +37,7 @@ class AudioUploadResponse(BaseModel):
         *,
         meeting_id: str | None = None,
         transcript_id: str | None = None,
+        response_text: str | None = None,
     ) -> Self:
         return cls(
             id=saved.id,
@@ -44,7 +45,7 @@ class AudioUploadResponse(BaseModel):
             content_type=saved.content_type,
             size_bytes=saved.size_bytes,
             language=transcript.language,
-            text=transcript.text,
+            text=response_text if response_text is not None else transcript.text,
             meeting_id=meeting_id,
             transcript_id=transcript_id,
         )

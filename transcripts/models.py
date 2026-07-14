@@ -12,6 +12,14 @@ class TranscriptAlreadyExistsError(Exception):
         self.meeting_id = meeting_id
 
 
+class TranscriptNotFoundError(Exception):
+    """Raised when append is requested but no transcript exists for the meeting."""
+
+    def __init__(self, meeting_id: uuid.UUID) -> None:
+        super().__init__(f"no transcript for meeting {meeting_id!r}")
+        self.meeting_id = meeting_id
+
+
 class TranscriptPatientMismatchError(Exception):
     """Raised when form patient_id does not match the calendar event's patient."""
 

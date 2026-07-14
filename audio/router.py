@@ -32,12 +32,41 @@ from summaries.service import run_summary_generation
 from transcription.errors import raise_for_transcription_error
 from transcription.models import TranscriptionFailedError
 from transcription.schemas import TranscriptionResponse
-from transcripts.models import TranscriptAlreadyExistsError, TranscriptPatientMismatchError
+from transcripts.models import (
+    TranscriptAlreadyExistsError,
+    TranscriptNotFoundError,
+    TranscriptPatientMismatchError,
+)
 from transcripts.service import TranscriptService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/audio", tags=["audio"])
+
+_TRANSCRIPT_MODES = frozenset({"create", "append", "replace"})
+
+
+async def _persist_transcript_for_upload(
+    db,
+    *,
+    meeting_id: uuid.UUID,
+    patient_id: uuid.UUID | None,
+    transcript,
+    transcript_mode: str,
+):
+    service = TranscriptService(db)
+    common = {
+        "meeting_id": meeting_id,
+        "patient_id": patient_id,
+        "raw_text": transcript.text,
+        "language": transcript.language or "he",
+        "diarized_segments": diarized_segments_from_transcript(transcript),
+    }
+    if transcript_mode == "create":
+        return await service.save_for_upload(**common)
+    if transcript_mode == "append":
+        return await service.append_for_upload(**common)
+    return await service.replace_for_upload(**common)
 
 
 @router.post("/upload", response_model=AudioUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -49,7 +78,15 @@ async def upload_audio(
     file: UploadFile = File(...),
     patient_id: uuid.UUID | None = Form(None),
     meeting_id: uuid.UUID | None = Form(None),
+    transcript_mode: str = Form("create"),
 ) -> AudioUploadResponse:
+    mode = (transcript_mode or "create").strip().lower()
+    if mode not in _TRANSCRIPT_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"transcript_mode must be one of: {', '.join(sorted(_TRANSCRIPT_MODES))}",
+        )
+
     try:
         saved, transcript = await service.upload_and_transcribe(file)
     except (
@@ -72,12 +109,12 @@ async def upload_audio(
                 detail="meeting_id is required to save a transcript",
             )
         try:
-            stored = await TranscriptService(db).save_for_upload(
+            stored = await _persist_transcript_for_upload(
+                db,
                 meeting_id=meeting_id,
                 patient_id=patient_id,
-                raw_text=transcript.text,
-                language=transcript.language or "he",
-                diarized_segments=diarized_segments_from_transcript(transcript),
+                transcript=transcript,
+                transcript_mode=mode,
             )
         except PatientNotFoundError as exc:
             raise HTTPException(
@@ -99,6 +136,11 @@ async def upload_audio(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
             ) from exc
+        except TranscriptNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
         except Exception as exc:
             logger.error("failed to persist transcript", exc_info=exc)
             raise HTTPException(
@@ -116,11 +158,13 @@ async def upload_audio(
             await summary_service.create_pending(stored.meeting_id)
             background_tasks.add_task(run_summary_generation, stored.meeting_id, settings)
 
+    response_text = stored.raw_text if db is not None and stored_meeting_id else None
     return AudioUploadResponse.from_upload(
         saved,
         transcript,
         meeting_id=stored_meeting_id,
         transcript_id=transcript_id,
+        response_text=response_text,
     )
 
 

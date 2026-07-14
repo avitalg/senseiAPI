@@ -52,3 +52,35 @@ class TranscriptRepository:
     async def get_by_id(self, transcript_id: uuid.UUID) -> StoredTranscript | None:
         record = await self._session.get(TranscriptRecord, transcript_id)
         return to_transcript(record) if record else None
+
+    async def update(
+        self,
+        meeting_id: uuid.UUID,
+        *,
+        raw_text: str,
+        language: str = "he",
+        diarized_segments: list[dict[str, Any]] | None = None,
+    ) -> StoredTranscript | None:
+        result = await self._session.execute(
+            select(TranscriptRecord).where(TranscriptRecord.meeting_id == meeting_id)
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return None
+        record.raw_text = raw_text
+        record.language = language or "he"
+        record.diarized_segments = diarized_segments or []
+        await self._session.commit()
+        await self._session.refresh(record)
+        return to_transcript(record)
+
+    async def delete_by_meeting_id(self, meeting_id: uuid.UUID) -> bool:
+        result = await self._session.execute(
+            select(TranscriptRecord).where(TranscriptRecord.meeting_id == meeting_id)
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        await self._session.delete(record)
+        await self._session.commit()
+        return True
