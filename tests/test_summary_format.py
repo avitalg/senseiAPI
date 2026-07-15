@@ -57,14 +57,14 @@ def test_normalize_summary_output_keeps_markdown_passthrough() -> None:
 def test_normalize_summary_output_recovers_nested_object() -> None:
     """Broken outer JSON + clean inner summary object (seen in production)."""
     raw = (
-        '{\n'
+        "{\n"
         '  "main_topics": "עברית לא סגורה PTSD描述：\n\n'
-        '{\n'
+        "{\n"
         '  "main_topics": "שינה וחרדה",\n'
         '  "therapist_interventions": "נשימה",\n'
         '  "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",\n'
         '  "follow_up": ["מעקב שינה"]\n'
-        '}\n'
+        "}\n"
     )
     md = normalize_summary_output(raw)
     assert md.startswith("## נושאים מרכזיים")

@@ -11,12 +11,12 @@ PASSWORD_HASH = PasswordHash.recommended()
 
 
 def hash_password(password: SecretStr) -> str:
-    return PASSWORD_HASH.hash(password.get_secret_value())
+    return str(PASSWORD_HASH.hash(password.get_secret_value()))
 
 
 def verify_password(password: SecretStr, password_hash: str) -> bool:
     try:
-        return PASSWORD_HASH.verify(password.get_secret_value(), password_hash)
+        return bool(PASSWORD_HASH.verify(password.get_secret_value(), password_hash))
     except (TypeError, UnknownHashError):
         return False
 

@@ -73,13 +73,17 @@ async def init_database(settings: Settings) -> None:
     engine = get_engine(settings.database_url)
     async with engine.begin() as conn:
         users_cols = (
-            await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_schema = 'public' AND table_name = 'users'"
+            (
+                await conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'users'"
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if users_cols and "password_hash" not in set(users_cols):
             await conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
 

@@ -47,9 +47,7 @@ class NextMeetingReportRepository:
 
     async def _record_for(self, patient_id: uuid.UUID) -> NextMeetingReportRecord | None:
         result = await self._session.execute(
-            select(NextMeetingReportRecord).where(
-                NextMeetingReportRecord.patient_id == patient_id
-            )
+            select(NextMeetingReportRecord).where(NextMeetingReportRecord.patient_id == patient_id)
         )
         return result.scalar_one_or_none()
 
@@ -124,8 +122,6 @@ class NextMeetingReportRepository:
 
     async def list_running(self) -> list[StoredReport]:
         result = await self._session.execute(
-            select(NextMeetingReportRecord).where(
-                NextMeetingReportRecord.status == "running"
-            )
+            select(NextMeetingReportRecord).where(NextMeetingReportRecord.status == "running")
         )
         return [to_report(record) for record in result.scalars().all()]

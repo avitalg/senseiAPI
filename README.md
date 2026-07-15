@@ -13,6 +13,7 @@ A FastAPI service (Python 3.11+).
 ```bash
 # Create and activate a virtual environment
 python -m venv .venv
+conda deactivate 2>/dev/null || true   # avoid conda shadowing .venv/bin (see Troubleshooting)
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 # Install runtime + dev dependencies
@@ -91,14 +92,31 @@ The API is then available at:
 
 ## Quality checks
 
-Run all of these before opening a PR or marking a task done — they must all pass:
+Use the project virtualenv (conda/base Python does not have API dependencies).
+Either activate it first, or use the Makefile (recommended):
+
+```bash
+make check              # lint + format + mypy + unit tests
+make test               # unit tests only
+make test-all           # unit + integration (needs Docker)
+```
+
+Or manually after `source .venv/bin/activate` (and `conda deactivate` if you use Anaconda):
 
 ```bash
 ruff check .            # lint
 ruff format --check .   # formatting
 mypy .                  # static type checks
-pytest                  # tests
+python -m pytest -m "not integration"   # unit tests (prefer over bare `pytest`)
 ```
+
+### Troubleshooting tests
+
+If `pytest` fails with `ModuleNotFoundError` for packages you already installed:
+
+1. **Conda is shadowing the venv** — your prompt may show `(base)` and `(.venv)` together. Run `conda deactivate`, then `source .venv/bin/activate`, and confirm `which python` points at `senseiapi/.venv/bin/python`.
+2. **Use the venv interpreter explicitly** — `python -m pytest` or `make test` always use the right Python.
+3. **Venv was moved or copied** — reinstall CLI entry points: `pip install --force-reinstall -r requirements-dev.txt`.
 
 Auto-fix what's fixable:
 
@@ -109,8 +127,10 @@ ruff format .
 
 ## Testing
 
+Yes — the API has a full test suite (168 tests: 154 unit, 14 integration). It covers auth, patients, calendar, audio/transcription, summaries, reports, and DB wiring. CI runs these; you should run unit tests before PRs.
+
 - Tests live in `tests/` and are named `test_*.py`.
-- Run the suite with `pytest` (or `pytest -q` for quiet output).
+- Run with `make test` or `python -m pytest` (not bare `pytest` when conda is active).
 - Endpoints are tested via `fastapi.testclient.TestClient`; assert both status code and response body.
 - Database integration tests use Testcontainers and require Docker.
 - Run `pytest -m "not integration"` to skip integration tests.

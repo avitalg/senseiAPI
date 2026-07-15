@@ -25,8 +25,7 @@ class ReportSynthesizer(ABC):
     """Turns past meeting summaries into a cross-meeting prep brief."""
 
     @abstractmethod
-    async def synthesize(self, *, summaries: Sequence[ReadyMeetingSummary]) -> GeneratedReport:
-        ...
+    async def synthesize(self, *, summaries: Sequence[ReadyMeetingSummary]) -> GeneratedReport: ...
 
 
 def format_summaries_for_prompt(summaries: Sequence[ReadyMeetingSummary]) -> str:

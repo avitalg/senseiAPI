@@ -1,8 +1,7 @@
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import jwt
-from jwt.types import Options
 
 from auth.models import AuthUser
 
@@ -41,7 +40,7 @@ def verify_access_token(
     secret_key: str,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    options: Options = {"require": REQUIRED_CLAIMS}
+    options: dict[str, object] = {"require": REQUIRED_CLAIMS}
     if now is not None:
         options["verify_exp"] = False
         options["verify_iat"] = False
@@ -51,13 +50,15 @@ def verify_access_token(
             token,
             secret_key,
             algorithms=[TOKEN_ALGORITHM],
-            options=options,
+            options=cast(Any, options),
         )
         if now is not None:
             _verify_time_claims(payload, now=now)
     except jwt.InvalidTokenError as exc:
         raise InvalidTokenError("invalid token") from exc
 
+    if not isinstance(payload, dict):
+        raise InvalidTokenError("invalid token")
     return payload
 
 

@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 import pytest
 
 from reports.models import GeneratedReport, StoredReport
-from reports.service import NO_READY_SUMMARIES_ERROR, NextMeetingReportService, fail_interrupted_reports
+from reports.service import (
+    NO_READY_SUMMARIES_ERROR,
+    NextMeetingReportService,
+    fail_interrupted_reports,
+)
 from reports.synthesizer import ReportSynthesizer
 from summaries.models import ReadyMeetingSummary
 
