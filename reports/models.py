@@ -55,6 +55,7 @@ class GeneratedReport:
 class StoredReport:
     """Persisted meeting prep report row."""
 
+    user_id: uuid.UUID
     id: uuid.UUID
     patient_id: uuid.UUID
     meeting_id: uuid.UUID

@@ -122,6 +122,7 @@ class SummaryRepository:
 
     async def list_ready_for_patient(
         self,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         *,
         limit: int = 8,
@@ -131,9 +132,11 @@ class SummaryRepository:
             select(SummaryRecord, CalendarEventRecord.start_at)
             .join(
                 CalendarEventRecord,
-                CalendarEventRecord.id == SummaryRecord.meeting_id,
+                (CalendarEventRecord.user_id == SummaryRecord.user_id)
+                & (CalendarEventRecord.id == SummaryRecord.meeting_id),
             )
             .where(
+                CalendarEventRecord.user_id == user_id,
                 CalendarEventRecord.patient_id == patient_id,
                 SummaryRecord.status == "ready",
                 SummaryRecord.text.is_not(None),
@@ -158,6 +161,7 @@ class SummaryRepository:
 
     async def list_ready_before_meeting(
         self,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         *,
         before_start_at: datetime,
@@ -168,9 +172,11 @@ class SummaryRepository:
             select(SummaryRecord, CalendarEventRecord.start_at)
             .join(
                 CalendarEventRecord,
-                CalendarEventRecord.id == SummaryRecord.meeting_id,
+                (CalendarEventRecord.user_id == SummaryRecord.user_id)
+                & (CalendarEventRecord.id == SummaryRecord.meeting_id),
             )
             .where(
+                CalendarEventRecord.user_id == user_id,
                 CalendarEventRecord.patient_id == patient_id,
                 CalendarEventRecord.start_at < before_start_at,
                 SummaryRecord.status == "ready",

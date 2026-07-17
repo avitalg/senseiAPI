@@ -43,7 +43,11 @@ async def fail_interrupted_summaries(summaries: SummaryRepository) -> int:
     return len(stranded)
 
 
-async def run_summary_generation(meeting_id: uuid.UUID, settings: "Settings") -> None:
+async def run_summary_generation(
+    user_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    settings: "Settings",
+) -> None:
     """Background entrypoint — opens its own session (request session is closed)."""
     if not settings.database_url or not settings.summary_enabled:
         return
@@ -57,7 +61,7 @@ async def run_summary_generation(meeting_id: uuid.UUID, settings: "Settings") ->
             summarizer=get_summarizer(settings),
             max_transcript_chars=settings.max_transcript_chars,
         )
-        await service.generate(meeting_id)
+        await service.generate(user_id, meeting_id)
 
 
 class SummaryService:
@@ -84,10 +88,10 @@ class SummaryService:
         return await self._summaries.create_pending(user_id, meeting_id)
 
     async def get(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredSummary | None:
-        return await self._summaries.get_by_meeting_id(meeting_id)
+        return await self._summaries.get_by_meeting_id(user_id, meeting_id)
 
     async def generate(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
-        transcript = await self._transcripts.get_by_meeting_id(meeting_id)
+        transcript = await self._transcripts.get_by_meeting_id(user_id, meeting_id)
         if transcript is None:
             await self._summaries.mark_failed(
                 user_id,

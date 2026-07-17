@@ -34,6 +34,7 @@ def _as_uuid_list(value: object) -> list[uuid.UUID]:
 
 def to_report(record: NextMeetingReportRecord) -> StoredReport:
     return StoredReport(
+        user_id=record.user_id,
         id=record.id,
         patient_id=record.patient_id,
         meeting_id=record.meeting_id,
@@ -53,9 +54,14 @@ class NextMeetingReportRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def _record_for(self, meeting_id: uuid.UUID) -> NextMeetingReportRecord | None:
+    async def _record_for(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> NextMeetingReportRecord | None:
         result = await self._session.execute(
             select(NextMeetingReportRecord).where(
+                NextMeetingReportRecord.user_id == user_id,
                 NextMeetingReportRecord.meeting_id == meeting_id,
             )
         )
@@ -69,14 +75,16 @@ class NextMeetingReportRepository:
 
     async def create_pending(
         self,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         meeting_id: uuid.UUID,
         *,
         model: str = "",
     ) -> StoredReport:
-        record = await self._record_for(meeting_id)
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
             record = NextMeetingReportRecord(
+                user_id=user_id,
                 patient_id=patient_id,
                 meeting_id=meeting_id,
                 status="pending",
@@ -97,8 +105,8 @@ class NextMeetingReportRepository:
                 record.model = model
         return await self._save(record)
 
-    async def mark_running(self, meeting_id: uuid.UUID) -> StoredReport:
-        record = await self._record_for(meeting_id)
+    async def mark_running(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredReport:
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
             raise ValueError(f"no report row for meeting {meeting_id!r}")
         record.status = "running"
@@ -106,6 +114,7 @@ class NextMeetingReportRepository:
 
     async def mark_ready(
         self,
+        user_id: uuid.UUID,
         meeting_id: uuid.UUID,
         *,
         intro: str,
@@ -114,7 +123,7 @@ class NextMeetingReportRepository:
         source_meeting_ids: list[uuid.UUID],
         model: str,
     ) -> StoredReport:
-        record = await self._record_for(meeting_id)
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
             raise ValueError(f"no report row for meeting {meeting_id!r}")
         record.status = "ready"
@@ -126,22 +135,39 @@ class NextMeetingReportRepository:
         record.error = None
         return await self._save(record)
 
-    async def mark_failed(self, meeting_id: uuid.UUID, *, error: str) -> StoredReport:
-        record = await self._record_for(meeting_id)
+    async def mark_failed(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        error: str,
+    ) -> StoredReport:
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
             raise ValueError(f"no report row for meeting {meeting_id!r}")
         record.status = "failed"
         record.error = error
         return await self._save(record)
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredReport | None:
-        record = await self._record_for(meeting_id)
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredReport | None:
+        record = await self._record_for(user_id, meeting_id)
         return to_report(record) if record else None
 
-    async def list_for_patient(self, patient_id: uuid.UUID) -> list[StoredReport]:
+    async def list_for_patient(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+    ) -> list[StoredReport]:
         result = await self._session.execute(
             select(NextMeetingReportRecord)
-            .where(NextMeetingReportRecord.patient_id == patient_id)
+            .where(
+                NextMeetingReportRecord.user_id == user_id,
+                NextMeetingReportRecord.patient_id == patient_id,
+            )
             .order_by(NextMeetingReportRecord.updated_at.desc())
         )
         return [to_report(record) for record in result.scalars().all()]

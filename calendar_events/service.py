@@ -55,12 +55,17 @@ class CalendarEventService:
         return await self._repository.update_meeting(user_id, meeting_id, updates)
 
     async def delete_meeting(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
-        await self._repository.delete_meeting(meeting_id)
+        await self._repository.delete_meeting(user_id, meeting_id)
 
     async def get_event(self, user_id: uuid.UUID, event_id: uuid.UUID) -> CalendarEvent:
         return await self.get_meeting(user_id, event_id)
 
-    async def update_event(self, user_id: uuid.UUID, event_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
+    async def update_event(
+        self,
+        user_id: uuid.UUID,
+        event_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> CalendarEvent:
         return await self.update_meeting(user_id, event_id, updates)
 
     async def delete_event(self, user_id: uuid.UUID, event_id: uuid.UUID) -> None:

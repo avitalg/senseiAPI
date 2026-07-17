@@ -58,7 +58,12 @@ class PatientRepository:
             raise PatientNotFoundError(patient_id)
         return _to_patient(record)
 
-    async def update(self, user_id: uuid.UUID, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
+    async def update(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> Patient:
         result = await self._session.execute(
             select(PatientRecord).where(
                 PatientRecord.user_id == user_id,

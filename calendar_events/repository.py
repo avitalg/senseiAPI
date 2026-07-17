@@ -129,7 +129,7 @@ class CalendarEventRepository:
         result = await self._session.execute(
             select(CalendarEventRecord).where(
                 CalendarEventRecord.user_id == user_id,
-                CalendarEventRecord.id == event_id,
+                CalendarEventRecord.id == meeting_id,
             )
         )
         record = result.scalar_one_or_none()
@@ -157,14 +157,19 @@ class CalendarEventRepository:
         await self._session.refresh(record)
         return _to_event(record)
 
-    async def update(self, user_id: uuid.UUID, meeting_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
+    async def update(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> CalendarEvent:
         return await self.update_meeting(user_id, meeting_id, updates)
 
     async def delete_meeting(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
         result = await self._session.execute(
             select(CalendarEventRecord).where(
                 CalendarEventRecord.user_id == user_id,
-                CalendarEventRecord.id == event_id,
+                CalendarEventRecord.id == meeting_id,
             )
         )
         record = result.scalar_one_or_none()

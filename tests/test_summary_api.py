@@ -62,10 +62,15 @@ class _FakeTranscriptRepo:
     def __init__(self, *, has_transcript: bool = True) -> None:
         self.has_transcript = has_transcript
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredTranscript | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredTranscript | None:
         if not self.has_transcript:
             return None
         return StoredTranscript(
+            user_id=user_id,
             id=uuid.uuid4(),
             meeting_id=meeting_id,
             raw_text="טקסט",
@@ -164,7 +169,7 @@ def test_post_starts_summary_when_transcript_exists(monkeypatch: pytest.MonkeyPa
 
     assert res.status_code == 202
     assert res.json()["status"] == "pending"
-    svc.create_pending.assert_awaited_once_with(MEETING_ID)
+    svc.create_pending.assert_awaited_once_with(TEST_USER_ID, MEETING_ID)
 
 
 def test_post_without_transcript_returns_404(monkeypatch: pytest.MonkeyPatch) -> None:

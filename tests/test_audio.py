@@ -281,7 +281,8 @@ def test_upload_schedules_a_summary_and_marks_it_pending(
     mock_pending.assert_awaited_once_with(TEST_USER_ID, meeting_id)
     mock_generate.assert_awaited_once()
     assert mock_generate.await_args is not None
-    assert mock_generate.await_args.args[0] == meeting_id
+    assert mock_generate.await_args.args[0] == TEST_USER_ID
+    assert mock_generate.await_args.args[1] == meeting_id
 
 
 def test_upload_unknown_meeting_returns_404(
