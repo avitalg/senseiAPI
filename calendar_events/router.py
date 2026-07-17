@@ -210,12 +210,12 @@ async def update_event(
 
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
-    event_id: uuid.UUID,
+    meeting_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> None:
     try:
-        await service.delete_event(current_user.user_id, event_id)
+        await service.delete_meeting(current_user.user_id, meeting_id)
     except CalendarEventNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

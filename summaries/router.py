@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from auth.router import get_current_user
+from auth.schemas import User
 from core.database import SessionDep, SettingsDep
 from summaries.dependencies import get_summary_reader, get_summary_service
 from summaries.repository import SummaryRepository
@@ -27,6 +28,7 @@ async def start_meeting_summary(
     background_tasks: BackgroundTasks,
     settings: SettingsDep,
     session: SessionDep,
+    current_user: User = Depends(get_current_user),
     service: SummaryService = Depends(get_summary_service),
 ) -> SummaryResponse:
     """Start (or resume) session-summary generation for a meeting with a transcript."""
@@ -36,19 +38,19 @@ async def start_meeting_summary(
             detail="summary generation is disabled",
         )
 
-    existing = await service.get(meeting_id)
+    existing = await service.get(current_user.user_id, meeting_id)
     if existing is not None and existing.status in ("pending", "running"):
         return SummaryResponse.from_summary(existing)
 
     transcripts = TranscriptRepository(session)
-    if await transcripts.get_by_meeting_id(meeting_id) is None:
+    if await transcripts.get_by_meeting_id(current_user.user_id, meeting_id) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no transcript for meeting {meeting_id}",
         )
 
     try:
-        summary = await service.create_pending(meeting_id)
+        summary = await service.create_pending(current_user.user_id, meeting_id)
     except SQLAlchemyError as exc:
         logger.error("failed to create pending summary", exc_info=exc)
         raise HTTPException(
@@ -56,7 +58,7 @@ async def start_meeting_summary(
             detail="failed to start summary",
         ) from exc
 
-    background_tasks.add_task(run_summary_generation, meeting_id, settings)
+    background_tasks.add_task(run_summary_generation, current_user.user_id, meeting_id, settings)
     return SummaryResponse.from_summary(summary)
 
 

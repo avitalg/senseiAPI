@@ -122,7 +122,7 @@ async def upload_audio(
                 run_summary_generation,
                 current_user.user_id,
                 stored.meeting_id,
-                settings
+                settings,
             )
 
     return AudioUploadResponse.from_upload(

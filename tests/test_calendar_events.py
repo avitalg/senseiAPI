@@ -361,6 +361,16 @@ def test_calendar_database(make_client: ClientFactory) -> None:
             assert initial_empty_list.status_code == 200
             assert initial_empty_list.json() == []
 
+            patient = client.post(
+                "/patients",
+                json={
+                    "name": "Test patient",
+                    "phone": "0501234567",
+                },
+            )
+            assert patient.status_code == 201
+            patient_id = patient.json()["id"]
+
             created = client.post(
                 "/calendar",
                 json={
@@ -368,7 +378,7 @@ def test_calendar_database(make_client: ClientFactory) -> None:
                     "description": "Initial notes",
                     "start_at": START_AT.isoformat(),
                     "end_at": END_AT.isoformat(),
-                    "patient_id": str(PATIENT_ID),
+                    "patient_id": patient_id,
                 },
             )
             assert created.status_code == 201
