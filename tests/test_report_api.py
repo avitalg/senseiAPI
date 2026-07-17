@@ -1,12 +1,13 @@
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from calendar_events.models import CalendarEvent
 from core.config import Settings, get_settings
 from main import app
 from patients.dependencies import get_patient_service
@@ -17,12 +18,14 @@ from summaries.dependencies import get_summary_reader
 from summaries.models import ReadyMeetingSummary
 
 PATIENT_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
+MEETING_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
+OTHER_MEETING_ID = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
+THERAPIST_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
+NOW = datetime(2026, 7, 17, 10, 30, tzinfo=UTC)
 
 
 @pytest.fixture(autouse=True)
 def _no_background_generation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    # reports/__init__.py exports `router`, which shadows the submodule name on the
-    # package — patch via sys.modules instead.
     monkeypatch.setattr(
         sys.modules["reports.router"],
         "run_report_generation",
@@ -42,6 +45,7 @@ def _stored(status: ReportStatus, **changes: object) -> StoredReport:
     base: dict[str, object] = {
         "id": uuid.uuid4(),
         "patient_id": PATIENT_ID,
+        "meeting_id": MEETING_ID,
         "status": status,
         "intro": None,
         "changes": [],
@@ -54,6 +58,27 @@ def _stored(status: ReportStatus, **changes: object) -> StoredReport:
     }
     base.update(changes)
     return StoredReport(**base)  # type: ignore[arg-type]
+
+
+def _meeting(
+    meeting_id: uuid.UUID = MEETING_ID,
+    *,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    patient_id: uuid.UUID = PATIENT_ID,
+) -> CalendarEvent:
+    start = start_at or NOW + timedelta(hours=1)
+    end = end_at or start + timedelta(hours=1)
+    return CalendarEvent(
+        id=meeting_id,
+        title="פגישה",
+        description=None,
+        start_at=start,
+        end_at=end,
+        created_at=NOW,
+        therapist_id=THERAPIST_ID,
+        patient_id=patient_id,
+    )
 
 
 class _FakePatients:
@@ -73,11 +98,19 @@ class _FakePatients:
 
 
 class _FakeReportReader:
-    def __init__(self, report: StoredReport | None) -> None:
-        self._report = report
+    def __init__(self, reports: dict[uuid.UUID, StoredReport] | StoredReport | None) -> None:
+        if isinstance(reports, StoredReport):
+            self._reports = {reports.meeting_id: reports}
+        elif reports is None:
+            self._reports = {}
+        else:
+            self._reports = reports
 
-    async def get_by_patient_id(self, patient_id: uuid.UUID) -> StoredReport | None:
-        return self._report
+    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredReport | None:
+        return self._reports.get(meeting_id)
+
+    async def list_for_patient(self, patient_id: uuid.UUID) -> list[StoredReport]:
+        return [r for r in self._reports.values() if r.patient_id == patient_id]
 
 
 class _FakeSummaryReader:
@@ -92,15 +125,37 @@ class _FakeSummaryReader:
     ) -> list[ReadyMeetingSummary]:
         return self._ready[:limit]
 
+    async def list_ready_before_meeting(
+        self,
+        patient_id: uuid.UUID,
+        *,
+        before_start_at: datetime,
+        limit: int = 8,
+    ) -> list[ReadyMeetingSummary]:
+        filtered = [item for item in self._ready if item.start_at < before_start_at]
+        return filtered[:limit]
+
 
 class _FakeReportService:
-    def __init__(self, report: StoredReport | None = None) -> None:
+    def __init__(
+        self,
+        report: StoredReport | None = None,
+        *,
+        meeting: CalendarEvent | None = None,
+        now: datetime = NOW,
+    ) -> None:
         self.report = report
+        self.meeting = meeting or _meeting()
         self.create_pending = AsyncMock(
             return_value=report or _stored("pending"),
         )
         self.get = AsyncMock(return_value=report)
         self.generate = AsyncMock()
+        self.verify_meeting_for_patient = AsyncMock(return_value=self.meeting)
+        self.resolve_next_meeting = AsyncMock(return_value=self.meeting)
+        self.list_for_patient = AsyncMock(
+            return_value=[report] if report else [],
+        )
 
 
 def teardown_function() -> None:
@@ -110,13 +165,15 @@ def teardown_function() -> None:
 def _client(
     *,
     report: StoredReport | None = None,
+    reports: dict[uuid.UUID, StoredReport] | None = None,
     patient_exists: bool = True,
     ready: list[ReadyMeetingSummary] | None = None,
     service: _FakeReportService | None = None,
 ) -> TestClient:
+    reader_data = reports if reports is not None else report
     svc = service or _FakeReportService(report)
     app.dependency_overrides[get_patient_service] = lambda: _FakePatients(exists=patient_exists)
-    app.dependency_overrides[get_report_reader] = lambda: _FakeReportReader(report)
+    app.dependency_overrides[get_report_reader] = lambda: _FakeReportReader(reader_data)
     app.dependency_overrides[get_report_service] = lambda: svc
     app.dependency_overrides[get_summary_reader] = lambda: _FakeSummaryReader(ready)
     return TestClient(app)
@@ -139,11 +196,12 @@ def test_get_ready_report_returns_200_with_sections() -> None:
     ]
     client = _client(report=report, ready=ready)
 
-    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "ready"
+    assert body["meeting_id"] == str(MEETING_ID)
     assert body["intro"] == "סקירה"
     assert body["changes"] == ["א"]
     assert body["open_topics"] == ["ב"]
@@ -155,23 +213,21 @@ def test_get_ready_report_includes_generated_at() -> None:
     report = _stored("ready", intro="סקירה", updated_at=generated)
     client = _client(report=report)
 
-    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 200
     assert res.json()["generated_at"] == generated.isoformat()
 
 
 def test_generated_at_tracks_regeneration() -> None:
-    """After a regenerate, the row's updated_at moves forward and so does the field."""
     before = datetime(2026, 7, 14, 9, 30, tzinfo=UTC)
     after = datetime(2026, 7, 14, 10, 45, tzinfo=UTC)
 
     first = _client(report=_stored("ready", updated_at=before))
-    first_body = first.get(f"/patients/{PATIENT_ID}/next-meeting-report").json()
+    first_body = first.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}").json()
 
-    # Re-registering overrides simulates the row after a regenerate cycle.
     second = _client(report=_stored("ready", updated_at=after))
-    second_body = second.get(f"/patients/{PATIENT_ID}/next-meeting-report").json()
+    second_body = second.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}").json()
 
     assert first_body["generated_at"] == before.isoformat()
     assert second_body["generated_at"] == after.isoformat()
@@ -181,7 +237,7 @@ def test_generated_at_tracks_regeneration() -> None:
 def test_get_running_report_returns_202() -> None:
     client = _client(report=_stored("running"))
 
-    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 202
     assert res.json()["status"] == "running"
@@ -190,7 +246,7 @@ def test_get_running_report_returns_202() -> None:
 def test_get_missing_report_returns_404() -> None:
     client = _client(report=None)
 
-    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 404
 
@@ -198,7 +254,7 @@ def test_get_missing_report_returns_404() -> None:
 def test_post_unknown_patient_returns_404() -> None:
     client = _client(patient_exists=False)
 
-    res = client.post(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.post(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 404
 
@@ -210,11 +266,11 @@ def test_post_starts_generation_for_new_report() -> None:
     svc.create_pending = AsyncMock(return_value=pending)
     client = _client(report=None, service=svc)
 
-    res = client.post(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.post(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 202
     assert res.json()["status"] == "pending"
-    svc.create_pending.assert_awaited_once_with(PATIENT_ID)
+    svc.create_pending.assert_awaited_once_with(PATIENT_ID, MEETING_ID)
 
 
 def test_post_returns_inflight_without_reset() -> None:
@@ -223,7 +279,7 @@ def test_post_returns_inflight_without_reset() -> None:
     svc.get = AsyncMock(return_value=running)
     client = _client(report=running, service=svc)
 
-    res = client.post(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.post(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 202
     assert res.json()["status"] == "running"
@@ -233,9 +289,79 @@ def test_post_returns_inflight_without_reset() -> None:
 def test_get_failed_report_returns_200_with_error() -> None:
     client = _client(report=_stored("failed", error="אין סיכומי פגישות מוכנים"))
 
-    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
 
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "failed"
     assert body["error"] == "אין סיכומי פגישות מוכנים"
+
+
+def test_next_meeting_get_delegates_to_resolved_meeting() -> None:
+    report = _stored("ready", intro="סקירה")
+    meeting = _meeting()
+    svc = _FakeReportService(report, meeting=meeting)
+    client = _client(report=report, service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+
+    assert res.status_code == 200
+    assert res.json()["meeting_id"] == str(MEETING_ID)
+    svc.resolve_next_meeting.assert_awaited_once_with(PATIENT_ID)
+
+
+def test_next_meeting_post_starts_generation_for_resolved_meeting() -> None:
+    pending = _stored("pending")
+    meeting = _meeting()
+    svc = _FakeReportService(None, meeting=meeting)
+    svc.get = AsyncMock(return_value=None)
+    svc.create_pending = AsyncMock(return_value=pending)
+    client = _client(report=None, service=svc)
+
+    res = client.post(f"/patients/{PATIENT_ID}/next-meeting-report")
+
+    assert res.status_code == 202
+    svc.resolve_next_meeting.assert_awaited_once_with(PATIENT_ID)
+    svc.create_pending.assert_awaited_once_with(PATIENT_ID, MEETING_ID)
+
+
+def test_next_meeting_get_without_upcoming_meeting_returns_404() -> None:
+    from reports.models import NoUpcomingMeetingError
+
+    svc = _FakeReportService(None)
+    svc.resolve_next_meeting = AsyncMock(side_effect=NoUpcomingMeetingError(PATIENT_ID))
+    client = _client(report=None, service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/next-meeting-report")
+
+    assert res.status_code == 404
+
+
+def test_meeting_patient_mismatch_returns_404() -> None:
+    from reports.models import MeetingPatientMismatchError
+
+    svc = _FakeReportService(None)
+    svc.verify_meeting_for_patient = AsyncMock(
+        side_effect=MeetingPatientMismatchError(PATIENT_ID, MEETING_ID),
+    )
+    client = _client(report=None, service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
+
+    assert res.status_code == 404
+
+
+def test_list_meeting_reports_for_patient() -> None:
+    report_a = _stored("ready", meeting_id=MEETING_ID)
+    report_b = _stored("failed", meeting_id=OTHER_MEETING_ID, error="x")
+    svc = _FakeReportService(report_a)
+    svc.list_for_patient = AsyncMock(return_value=[report_a, report_b])
+    client = _client(reports={MEETING_ID: report_a, OTHER_MEETING_ID: report_b}, service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body) == 2
+    assert body[0]["meeting_id"] == str(MEETING_ID)
+    assert body[1]["status"] == "failed"

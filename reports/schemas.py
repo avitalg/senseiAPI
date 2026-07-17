@@ -7,6 +7,7 @@ from reports.models import ReportStatus, StoredReport
 
 class NextMeetingReportResponse(BaseModel):
     patient_id: str
+    meeting_id: str
     status: ReportStatus
     intro: str | None = None
     changes: list[str] | None = None
@@ -26,6 +27,7 @@ class NextMeetingReportResponse(BaseModel):
     ) -> Self:
         return cls(
             patient_id=str(report.patient_id),
+            meeting_id=str(report.meeting_id),
             status=report.status,
             intro=report.intro,
             changes=list(report.changes) if report.changes is not None else [],
@@ -35,4 +37,18 @@ class NextMeetingReportResponse(BaseModel):
             generated_at=(report.updated_at.isoformat() if report.updated_at else None),
             model=report.model or None,
             error=report.error,
+        )
+
+
+class MeetingReportListItem(BaseModel):
+    meeting_id: str
+    status: ReportStatus
+    generated_at: str | None = None
+
+    @classmethod
+    def from_report(cls, report: StoredReport) -> Self:
+        return cls(
+            meeting_id=str(report.meeting_id),
+            status=report.status,
+            generated_at=(report.updated_at.isoformat() if report.updated_at else None),
         )

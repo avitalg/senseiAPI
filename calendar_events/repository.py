@@ -82,22 +82,49 @@ class CalendarEventRepository:
         result = await self._session.execute(statement.order_by(CalendarEventRecord.start_at.asc()))
         return [_to_event(record) for record in result.scalars().all()]
 
-    async def get(self, event_id: uuid.UUID) -> CalendarEvent:
+    async def get_meeting(self, meeting_id: uuid.UUID) -> CalendarEvent:
         result = await self._session.execute(
             select(CalendarEventRecord).where(
-                CalendarEventRecord.id == event_id,
+                CalendarEventRecord.id == meeting_id,
                 CalendarEventRecord.therapist_id == FAKE_THERAPIST_ID,
             )
         )
         record = result.scalar_one_or_none()
         if record is None:
-            raise CalendarEventNotFoundError(event_id)
+            raise CalendarEventNotFoundError(meeting_id)
         return _to_event(record)
 
-    async def update(self, event_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
-        record = await self._session.get(CalendarEventRecord, event_id)
+    async def get(self, meeting_id: uuid.UUID) -> CalendarEvent:
+        return await self.get_meeting(meeting_id)
+
+    async def find_active_meeting_for_patient(
+        self,
+        patient_id: uuid.UUID,
+        *,
+        now: datetime,
+    ) -> CalendarEvent | None:
+        """Earliest in-progress or upcoming meeting for the patient."""
+        result = await self._session.execute(
+            select(CalendarEventRecord)
+            .where(
+                CalendarEventRecord.therapist_id == FAKE_THERAPIST_ID,
+                CalendarEventRecord.patient_id == patient_id,
+                CalendarEventRecord.end_at > now,
+            )
+            .order_by(CalendarEventRecord.start_at.asc())
+            .limit(1)
+        )
+        record = result.scalar_one_or_none()
+        return _to_event(record) if record else None
+
+    async def update_meeting(
+        self,
+        meeting_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> CalendarEvent:
+        record = await self._session.get(CalendarEventRecord, meeting_id)
         if record is None:
-            raise CalendarEventNotFoundError(event_id)
+            raise CalendarEventNotFoundError(meeting_id)
         if "title" in updates:
             record.title = str(updates["title"])
         if "description" in updates:
@@ -119,9 +146,15 @@ class CalendarEventRepository:
         await self._session.refresh(record)
         return _to_event(record)
 
-    async def delete(self, event_id: uuid.UUID) -> None:
-        record = await self._session.get(CalendarEventRecord, event_id)
+    async def update(self, meeting_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
+        return await self.update_meeting(meeting_id, updates)
+
+    async def delete_meeting(self, meeting_id: uuid.UUID) -> None:
+        record = await self._session.get(CalendarEventRecord, meeting_id)
         if record is None:
-            raise CalendarEventNotFoundError(event_id)
+            raise CalendarEventNotFoundError(meeting_id)
         await self._session.delete(record)
         await self._session.commit()
+
+    async def delete(self, meeting_id: uuid.UUID) -> None:
+        await self.delete_meeting(meeting_id)

@@ -10,11 +10,12 @@ from core.database import Base
 
 
 class TranscriptRecord(Base):
-    """Persisted transcript for a therapy meeting (calendar event)."""
+    """Persisted transcript for a therapy meeting."""
 
     __tablename__ = "transcripts"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # meeting_id references calendar_events.id (same entity as API meeting_id).
     meeting_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("calendar_events.id", ondelete="CASCADE"),

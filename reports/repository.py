@@ -10,7 +10,14 @@ from reports.orm import NextMeetingReportRecord
 def _as_str_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [str(item) for item in value if item is not None and str(item).strip()]
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if text:
+            out.append(text)
+    return out
 
 
 def _as_uuid_list(value: object) -> list[uuid.UUID]:
@@ -29,6 +36,7 @@ def to_report(record: NextMeetingReportRecord) -> StoredReport:
     return StoredReport(
         id=record.id,
         patient_id=record.patient_id,
+        meeting_id=record.meeting_id,
         status=record.status,  # type: ignore[arg-type]
         intro=record.intro,
         changes=_as_str_list(record.changes),
@@ -45,9 +53,11 @@ class NextMeetingReportRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def _record_for(self, patient_id: uuid.UUID) -> NextMeetingReportRecord | None:
+    async def _record_for(self, meeting_id: uuid.UUID) -> NextMeetingReportRecord | None:
         result = await self._session.execute(
-            select(NextMeetingReportRecord).where(NextMeetingReportRecord.patient_id == patient_id)
+            select(NextMeetingReportRecord).where(
+                NextMeetingReportRecord.meeting_id == meeting_id,
+            )
         )
         return result.scalar_one_or_none()
 
@@ -57,11 +67,18 @@ class NextMeetingReportRepository:
         await self._session.refresh(record)
         return to_report(record)
 
-    async def create_pending(self, patient_id: uuid.UUID, *, model: str = "") -> StoredReport:
-        record = await self._record_for(patient_id)
+    async def create_pending(
+        self,
+        patient_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        model: str = "",
+    ) -> StoredReport:
+        record = await self._record_for(meeting_id)
         if record is None:
             record = NextMeetingReportRecord(
                 patient_id=patient_id,
+                meeting_id=meeting_id,
                 status="pending",
                 model=model,
                 changes=[],
@@ -69,6 +86,7 @@ class NextMeetingReportRepository:
                 source_meeting_ids=[],
             )
         else:
+            record.patient_id = patient_id
             record.status = "pending"
             record.intro = None
             record.changes = []
@@ -79,16 +97,16 @@ class NextMeetingReportRepository:
                 record.model = model
         return await self._save(record)
 
-    async def mark_running(self, patient_id: uuid.UUID) -> StoredReport:
-        record = await self._record_for(patient_id)
+    async def mark_running(self, meeting_id: uuid.UUID) -> StoredReport:
+        record = await self._record_for(meeting_id)
         if record is None:
-            record = NextMeetingReportRecord(patient_id=patient_id)
+            raise ValueError(f"no report row for meeting {meeting_id!r}")
         record.status = "running"
         return await self._save(record)
 
     async def mark_ready(
         self,
-        patient_id: uuid.UUID,
+        meeting_id: uuid.UUID,
         *,
         intro: str,
         changes: list[str],
@@ -96,9 +114,9 @@ class NextMeetingReportRepository:
         source_meeting_ids: list[uuid.UUID],
         model: str,
     ) -> StoredReport:
-        record = await self._record_for(patient_id)
+        record = await self._record_for(meeting_id)
         if record is None:
-            record = NextMeetingReportRecord(patient_id=patient_id)
+            raise ValueError(f"no report row for meeting {meeting_id!r}")
         record.status = "ready"
         record.intro = intro
         record.changes = list(changes)
@@ -108,17 +126,25 @@ class NextMeetingReportRepository:
         record.error = None
         return await self._save(record)
 
-    async def mark_failed(self, patient_id: uuid.UUID, *, error: str) -> StoredReport:
-        record = await self._record_for(patient_id)
+    async def mark_failed(self, meeting_id: uuid.UUID, *, error: str) -> StoredReport:
+        record = await self._record_for(meeting_id)
         if record is None:
-            record = NextMeetingReportRecord(patient_id=patient_id)
+            raise ValueError(f"no report row for meeting {meeting_id!r}")
         record.status = "failed"
         record.error = error
         return await self._save(record)
 
-    async def get_by_patient_id(self, patient_id: uuid.UUID) -> StoredReport | None:
-        record = await self._record_for(patient_id)
+    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredReport | None:
+        record = await self._record_for(meeting_id)
         return to_report(record) if record else None
+
+    async def list_for_patient(self, patient_id: uuid.UUID) -> list[StoredReport]:
+        result = await self._session.execute(
+            select(NextMeetingReportRecord)
+            .where(NextMeetingReportRecord.patient_id == patient_id)
+            .order_by(NextMeetingReportRecord.updated_at.desc())
+        )
+        return [to_report(record) for record in result.scalars().all()]
 
     async def list_running(self) -> list[StoredReport]:
         result = await self._session.execute(

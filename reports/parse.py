@@ -77,13 +77,28 @@ def _strip_fences(raw: str) -> str:
     return text.strip()
 
 
+def _as_str_field(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _as_str_list(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    text = str(value).strip()
-    return [text] if text else []
+        out: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
+            if text:
+                out.append(text)
+        return out
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    return []
 
 
 def parse_report_json(text: str) -> tuple[str, list[str], list[str]] | None:
@@ -100,7 +115,7 @@ def parse_report_json(text: str) -> tuple[str, list[str], list[str]] | None:
             return None
     if not isinstance(data, dict):
         return None
-    intro = str(data.get("intro") or "").strip()
+    intro = _as_str_field(data.get("intro"))
     changes = _as_str_list(data.get("changes"))
     open_topics = _as_str_list(data.get("open_topics"))
     if not intro and not changes and not open_topics:

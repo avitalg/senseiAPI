@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from calendar_events.models import CalendarEvent
 from reports.models import GeneratedReport, StoredReport
 from reports.service import (
     NO_READY_SUMMARIES_ERROR,
@@ -15,6 +16,8 @@ from summaries.models import ReadyMeetingSummary
 PATIENT_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 MEETING_A = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 MEETING_B = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+MEETING_TARGET = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
+THERAPIST_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
 
 
 @pytest.fixture
@@ -51,12 +54,13 @@ class _FakeReportRepository:
         self.rows: dict[uuid.UUID, StoredReport] = {}
         self.transitions: list[str] = []
 
-    def _row(self, patient_id: uuid.UUID, **changes: object) -> StoredReport:
+    def _row(self, meeting_id: uuid.UUID, patient_id: uuid.UUID, **changes: object) -> StoredReport:
         now = datetime.now(UTC)
-        current = self.rows.get(patient_id)
+        current = self.rows.get(meeting_id)
         base: dict[str, object] = {
             "id": current.id if current else uuid.uuid4(),
             "patient_id": patient_id,
+            "meeting_id": meeting_id,
             "status": "pending",
             "intro": None,
             "changes": [],
@@ -69,19 +73,33 @@ class _FakeReportRepository:
         }
         base.update(changes)
         row = StoredReport(**base)  # type: ignore[arg-type]
-        self.rows[patient_id] = row
+        self.rows[meeting_id] = row
         self.transitions.append(row.status)
         return row
 
-    async def create_pending(self, patient_id: uuid.UUID, *, model: str = "") -> StoredReport:
-        return self._row(patient_id, status="pending", model=model, intro=None, error=None)
+    async def create_pending(
+        self,
+        patient_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        model: str = "",
+    ) -> StoredReport:
+        return self._row(
+            meeting_id,
+            patient_id,
+            status="pending",
+            model=model,
+            intro=None,
+            error=None,
+        )
 
-    async def mark_running(self, patient_id: uuid.UUID) -> StoredReport:
-        return self._row(patient_id, status="running")
+    async def mark_running(self, meeting_id: uuid.UUID) -> StoredReport:
+        row = self.rows[meeting_id]
+        return self._row(meeting_id, row.patient_id, status="running")
 
     async def mark_ready(
         self,
-        patient_id: uuid.UUID,
+        meeting_id: uuid.UUID,
         *,
         intro: str,
         changes: list[str],
@@ -89,8 +107,10 @@ class _FakeReportRepository:
         source_meeting_ids: list[uuid.UUID],
         model: str,
     ) -> StoredReport:
+        row = self.rows[meeting_id]
         return self._row(
-            patient_id,
+            meeting_id,
+            row.patient_id,
             status="ready",
             intro=intro,
             changes=changes,
@@ -100,11 +120,15 @@ class _FakeReportRepository:
             error=None,
         )
 
-    async def mark_failed(self, patient_id: uuid.UUID, *, error: str) -> StoredReport:
-        return self._row(patient_id, status="failed", error=error)
+    async def mark_failed(self, meeting_id: uuid.UUID, *, error: str) -> StoredReport:
+        row = self.rows[meeting_id]
+        return self._row(meeting_id, row.patient_id, status="failed", error=error)
 
-    async def get_by_patient_id(self, patient_id: uuid.UUID) -> StoredReport | None:
-        return self.rows.get(patient_id)
+    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredReport | None:
+        return self.rows.get(meeting_id)
+
+    async def list_for_patient(self, patient_id: uuid.UUID) -> list[StoredReport]:
+        return [row for row in self.rows.values() if row.patient_id == patient_id]
 
     async def list_running(self) -> list[StoredReport]:
         return [row for row in self.rows.values() if row.status == "running"]
@@ -122,24 +146,79 @@ class _FakeSummaryRepository:
     ) -> list[ReadyMeetingSummary]:
         return self._ready[:limit]
 
+    async def list_ready_before_meeting(
+        self,
+        patient_id: uuid.UUID,
+        *,
+        before_start_at: datetime,
+        limit: int = 8,
+    ) -> list[ReadyMeetingSummary]:
+        filtered = [item for item in self._ready if item.start_at < before_start_at]
+        return filtered[:limit]
+
+
+class _FakeCalendarRepository:
+    def __init__(self, meeting: CalendarEvent) -> None:
+        self._meeting = meeting
+
+    async def get_meeting(self, meeting_id: uuid.UUID) -> CalendarEvent:
+        if meeting_id != self._meeting.id:
+            from calendar_events.models import CalendarEventNotFoundError
+
+            raise CalendarEventNotFoundError(meeting_id)
+        return self._meeting
+
+    async def get(self, meeting_id: uuid.UUID) -> CalendarEvent:
+        return await self.get_meeting(meeting_id)
+
+    async def find_active_meeting_for_patient(
+        self,
+        patient_id: uuid.UUID,
+        *,
+        now: datetime,
+    ) -> CalendarEvent | None:
+        if patient_id != self._meeting.patient_id:
+            return None
+        if self._meeting.end_at <= now:
+            return None
+        return self._meeting
+
+
+def _target_meeting(*, start_at: datetime | None = None) -> CalendarEvent:
+    start = start_at or datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
+    end = start.replace(hour=start.hour + 1)
+    return CalendarEvent(
+        id=MEETING_TARGET,
+        title="פגישה",
+        description=None,
+        start_at=start,
+        end_at=end,
+        created_at=datetime(2026, 7, 1, tzinfo=UTC),
+        therapist_id=THERAPIST_ID,
+        patient_id=PATIENT_ID,
+    )
+
 
 def _service(
     *,
     ready: list[ReadyMeetingSummary],
     synthesizer: ReportSynthesizer,
     reports: _FakeReportRepository | None = None,
+    meeting: CalendarEvent | None = None,
 ) -> tuple[NextMeetingReportService, _FakeReportRepository, _FakeSynthesizer | ReportSynthesizer]:
     repo = reports or _FakeReportRepository()
+    target = meeting or _target_meeting()
     service = NextMeetingReportService(
         reports=repo,  # type: ignore[arg-type]
         summaries=_FakeSummaryRepository(ready),  # type: ignore[arg-type]
+        calendar=_FakeCalendarRepository(target),  # type: ignore[arg-type]
         synthesizer=synthesizer,
     )
     return service, repo, synthesizer
 
 
 def _ready(meeting_id: uuid.UUID, *, days_ago: int, text: str) -> ReadyMeetingSummary:
-    start = datetime(2026, 7, 1, tzinfo=UTC).replace(day=max(1, 10 - days_ago))
+    start = datetime(2026, 7, 20, tzinfo=UTC).replace(day=max(1, 20 - days_ago))
     return ReadyMeetingSummary(meeting_id=meeting_id, start_at=start, text=text)
 
 
@@ -153,28 +232,49 @@ async def test_generate_marks_ready_with_parsed_sections() -> None:
         ],
         synthesizer=synth,
     )
-    await repo.create_pending(PATIENT_ID)
+    await repo.create_pending(PATIENT_ID, MEETING_TARGET)
 
-    await service.generate(PATIENT_ID)
+    await service.generate(PATIENT_ID, MEETING_TARGET)
 
-    row = repo.rows[PATIENT_ID]
+    row = repo.rows[MEETING_TARGET]
     assert row.status == "ready"
     assert row.intro == "סקירה"
     assert row.changes == ["שינוי א"]
     assert row.open_topics == ["נושא א"]
     assert row.source_meeting_ids == [MEETING_A, MEETING_B]
-    # synthesizer sees chronological order (older first)
     assert [s.meeting_id for s in synth.calls[0]] == [MEETING_A, MEETING_B]
+
+
+@pytest.mark.anyio
+async def test_generate_excludes_target_and_future_summaries() -> None:
+    synth = _FakeSynthesizer()
+    future = ReadyMeetingSummary(
+        meeting_id=uuid.uuid4(),
+        start_at=datetime(2026, 7, 25, 10, 0, tzinfo=UTC),
+        text="עתידי",
+    )
+    service, repo, _ = _service(
+        ready=[
+            _ready(MEETING_B, days_ago=1, text="עבר"),
+            future,
+        ],
+        synthesizer=synth,
+    )
+    await repo.create_pending(PATIENT_ID, MEETING_TARGET)
+
+    await service.generate(PATIENT_ID, MEETING_TARGET)
+
+    assert [s.meeting_id for s in synth.calls[0]] == [MEETING_B]
 
 
 @pytest.mark.anyio
 async def test_generate_with_no_ready_summaries_fails_in_hebrew() -> None:
     service, repo, synth = _service(ready=[], synthesizer=_FakeSynthesizer())
-    await repo.create_pending(PATIENT_ID)
+    await repo.create_pending(PATIENT_ID, MEETING_TARGET)
 
-    await service.generate(PATIENT_ID)
+    await service.generate(PATIENT_ID, MEETING_TARGET)
 
-    row = repo.rows[PATIENT_ID]
+    row = repo.rows[MEETING_TARGET]
     assert row.status == "failed"
     assert row.error == NO_READY_SUMMARIES_ERROR
     assert isinstance(synth, _FakeSynthesizer)
@@ -187,11 +287,11 @@ async def test_generate_marks_failed_when_synthesizer_errors() -> None:
         ready=[_ready(MEETING_A, days_ago=1, text="טקסט")],
         synthesizer=_FakeSynthesizer(error=RuntimeError("ollama down")),
     )
-    await repo.create_pending(PATIENT_ID)
+    await repo.create_pending(PATIENT_ID, MEETING_TARGET)
 
-    await service.generate(PATIENT_ID)
+    await service.generate(PATIENT_ID, MEETING_TARGET)
 
-    row = repo.rows[PATIENT_ID]
+    row = repo.rows[MEETING_TARGET]
     assert row.status == "failed"
     assert "ollama down" in (row.error or "")
 
@@ -213,21 +313,41 @@ async def test_generate_fills_open_topics_from_last_summary_followup() -> None:
         ],
         synthesizer=_FakeSynthesizer(open_topics=[]),
     )
-    await repo.create_pending(PATIENT_ID)
+    await repo.create_pending(PATIENT_ID, MEETING_TARGET)
 
-    await service.generate(PATIENT_ID)
+    await service.generate(PATIENT_ID, MEETING_TARGET)
 
-    row = repo.rows[PATIENT_ID]
+    row = repo.rows[MEETING_TARGET]
     assert row.status == "ready"
     assert row.open_topics == ["לחזור לדפוסי שינה", "לחזק ויסות"]
 
 
 @pytest.mark.anyio
+async def test_regenerating_second_meeting_preserves_first_report() -> None:
+    repo = _FakeReportRepository()
+    other_meeting = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
+    await repo.create_pending(PATIENT_ID, MEETING_TARGET)
+    await repo.mark_ready(
+        MEETING_TARGET,
+        intro="ישן",
+        changes=["א"],
+        open_topics=["ב"],
+        source_meeting_ids=[MEETING_A],
+        model="m",
+    )
+    await repo.create_pending(PATIENT_ID, other_meeting)
+
+    assert repo.rows[MEETING_TARGET].intro == "ישן"
+    assert repo.rows[other_meeting].status == "pending"
+
+
+@pytest.mark.anyio
 async def test_fail_interrupted_reports_sweeps_running_rows() -> None:
     reports = _FakeReportRepository()
-    await reports.mark_running(PATIENT_ID)
+    await reports.create_pending(PATIENT_ID, MEETING_TARGET)
+    await reports.mark_running(MEETING_TARGET)
 
     count = await fail_interrupted_reports(reports)  # type: ignore[arg-type]
 
     assert count == 1
-    assert reports.rows[PATIENT_ID].status == "failed"
+    assert reports.rows[MEETING_TARGET].status == "failed"

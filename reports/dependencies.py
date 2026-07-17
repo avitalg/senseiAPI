@@ -1,3 +1,4 @@
+from calendar_events.repository import CalendarEventRepository
 from core.config import Settings, get_settings
 from core.database import SessionDep, SettingsDep
 from reports.repository import NextMeetingReportRepository
@@ -14,6 +15,7 @@ def build_report_service(session: SessionDep, settings: Settings) -> NextMeeting
     return NextMeetingReportService(
         reports=NextMeetingReportRepository(session),
         summaries=SummaryRepository(session),
+        calendar=CalendarEventRepository(session),
         synthesizer=get_report_synthesizer(settings),
     )
 

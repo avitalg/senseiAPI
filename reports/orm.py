@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,14 +10,20 @@ from core.database import Base
 
 
 class NextMeetingReportRecord(Base):
-    """Cross-meeting prep brief for a patient (one current row per patient)."""
+    """Prep brief for a specific upcoming/in-progress calendar meeting."""
 
     __tablename__ = "next_meeting_reports"
+    __table_args__ = (Index("ix_next_meeting_reports_patient_id", "patient_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     patient_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("patients.id", ondelete="CASCADE"),
+    )
+    # meeting_id references calendar_events.id (prep brief target session).
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("calendar_events.id", ondelete="CASCADE"),
         unique=True,
         index=True,
     )

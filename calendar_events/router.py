@@ -133,15 +133,15 @@ async def list_events(
     return [CalendarEventOut.from_event(event, time_zone=zone_info) for event in events]
 
 
-@router.get("/{event_id}", response_model=CalendarEventOut)
+@router.get("/{meeting_id}", response_model=CalendarEventOut)
 async def get_event(
-    event_id: uuid.UUID,
+    meeting_id: uuid.UUID,
     time_zone: Annotated[str, Query()] = ISRAEL_TZ.key,
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> CalendarEventOut:
     zone_info = get_time_zone(time_zone)
     try:
-        event = await service.get_event(event_id)
+        event = await service.get_meeting(meeting_id)
     except CalendarEventNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -156,9 +156,9 @@ async def get_event(
     return CalendarEventOut.from_event(event, time_zone=zone_info)
 
 
-@router.patch("/{event_id}", response_model=CalendarEventOut)
+@router.patch("/{meeting_id}", response_model=CalendarEventOut)
 async def update_event(
-    event_id: uuid.UUID,
+    meeting_id: uuid.UUID,
     payload: CalendarEventUpdate,
     time_zone: Annotated[str, Query()] = ISRAEL_TZ.key,
     service: CalendarEventService = Depends(get_calendar_event_service),
@@ -170,8 +170,8 @@ async def update_event(
     if payload.end_at is not None:
         updates["end_at"] = in_utc(payload.end_at, zone_info)
     try:
-        event = await service.update_event(
-            event_id,
+        event = await service.update_meeting(
+            meeting_id,
             updates,
         )
     except CalendarEventNotFoundError as exc:
@@ -188,13 +188,13 @@ async def update_event(
     return CalendarEventOut.from_event(event, time_zone=zone_info)
 
 
-@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
-    event_id: uuid.UUID,
+    meeting_id: uuid.UUID,
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> None:
     try:
-        await service.delete_event(event_id)
+        await service.delete_meeting(meeting_id)
     except CalendarEventNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

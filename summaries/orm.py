@@ -8,11 +8,12 @@ from core.database import Base
 
 
 class SummaryRecord(Base):
-    """Persisted session summary for a therapy meeting (calendar event)."""
+    """Persisted session summary for a therapy meeting."""
 
     __tablename__ = "meeting_summaries"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # meeting_id references calendar_events.id (same entity as API meeting_id).
     meeting_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("calendar_events.id", ondelete="CASCADE"),

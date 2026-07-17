@@ -1,3 +1,5 @@
+import json
+
 from reports.parse import (
     FOLLOWUP_HEADING,
     bullets_under_heading,
@@ -96,6 +98,59 @@ def test_bullets_under_followup_heading() -> None:
         "לחזור לדפוסי שינה",
         "לחזק כלי ויסות",
     ]
+
+
+def test_parse_json_rejects_non_string_intro() -> None:
+    raw = json.dumps(
+        {
+            "intro": 123,
+            "changes": ["שינוי"],
+            "open_topics": ["נושא"],
+        }
+    )
+    intro, changes, open_topics = parse_report_output(raw)
+    assert intro == ""
+    assert changes == ["שינוי"]
+    assert open_topics == ["נושא"]
+
+
+def test_parse_json_filters_non_string_list_items() -> None:
+    raw = json.dumps(
+        {
+            "intro": "סקירה",
+            "changes": ["valid", 123, None, {"bad": True}, ["nested"], ""],
+            "open_topics": ["topic"],
+        }
+    )
+    intro, changes, open_topics = parse_report_output(raw)
+    assert intro == "סקירה"
+    assert changes == ["valid"]
+    assert open_topics == ["topic"]
+
+
+def test_parse_json_rejects_non_string_scalar_list_field() -> None:
+    raw = json.dumps(
+        {
+            "intro": "סקירה",
+            "changes": 123,
+            "open_topics": ["נושא"],
+        }
+    )
+    _, changes, open_topics = parse_report_output(raw)
+    assert changes == []
+    assert open_topics == ["נושא"]
+
+
+def test_parse_json_accepts_scalar_string_for_list_field() -> None:
+    raw = json.dumps(
+        {
+            "intro": "סקירה",
+            "changes": "single item",
+            "open_topics": [],
+        }
+    )
+    _, changes, _ = parse_report_output(raw)
+    assert changes == ["single item"]
 
 
 def test_parse_failure_keeps_raw_text_as_intro() -> None:

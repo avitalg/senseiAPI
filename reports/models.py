@@ -11,11 +11,33 @@ class ReportFailedError(Exception):
 
 
 class ReportNotFoundError(Exception):
-    """Raised when no report has been requested for the given patient."""
+    """Raised when no report has been requested for the given meeting."""
+
+    def __init__(self, patient_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+        super().__init__(
+            f"no meeting report for patient {patient_id!r} meeting {meeting_id!r}",
+        )
+        self.patient_id = patient_id
+        self.meeting_id = meeting_id
+
+
+class NoUpcomingMeetingError(Exception):
+    """Raised when a patient has no in-progress or upcoming calendar meeting."""
 
     def __init__(self, patient_id: uuid.UUID) -> None:
-        super().__init__(f"no next-meeting report for patient {patient_id!r}")
+        super().__init__(f"no upcoming meeting for patient {patient_id!r}")
         self.patient_id = patient_id
+
+
+class MeetingPatientMismatchError(Exception):
+    """Raised when a calendar event does not belong to the requested patient."""
+
+    def __init__(self, patient_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+        super().__init__(
+            f"calendar event {meeting_id!r} does not belong to patient {patient_id!r}",
+        )
+        self.patient_id = patient_id
+        self.meeting_id = meeting_id
 
 
 @dataclass(frozen=True)
@@ -31,10 +53,11 @@ class GeneratedReport:
 
 @dataclass(frozen=True)
 class StoredReport:
-    """Persisted next-meeting report row."""
+    """Persisted meeting prep report row."""
 
     id: uuid.UUID
     patient_id: uuid.UUID
+    meeting_id: uuid.UUID
     status: ReportStatus
     intro: str | None
     changes: list[str]

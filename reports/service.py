@@ -1,9 +1,16 @@
 import logging
 import uuid
+from datetime import UTC, datetime
 
+from calendar_events.models import CalendarEvent, CalendarEventNotFoundError
+from calendar_events.repository import CalendarEventRepository
 from core.config import Settings
 from core.database import get_sessionmaker
-from reports.models import StoredReport
+from reports.models import (
+    MeetingPatientMismatchError,
+    NoUpcomingMeetingError,
+    StoredReport,
+)
 from reports.parse import FOLLOWUP_HEADING, bullets_under_heading
 from reports.repository import NextMeetingReportRepository
 from reports.synthesizer import OllamaReportSynthesizer, ReportSynthesizer
@@ -37,7 +44,7 @@ async def fail_interrupted_reports(reports: NextMeetingReportRepository) -> int:
     stranded = await reports.list_running()
     for report in stranded:
         await reports.mark_failed(
-            report.patient_id,
+            report.meeting_id,
             error="generation was interrupted by a server restart",
         )
     if stranded:
@@ -45,7 +52,11 @@ async def fail_interrupted_reports(reports: NextMeetingReportRepository) -> int:
     return len(stranded)
 
 
-async def run_report_generation(patient_id: uuid.UUID, settings: Settings) -> None:
+async def run_report_generation(
+    patient_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    settings: Settings,
+) -> None:
     """Background entrypoint — opens its own session (request session is closed)."""
     if not settings.database_url:
         return
@@ -54,9 +65,10 @@ async def run_report_generation(patient_id: uuid.UUID, settings: Settings) -> No
         service = NextMeetingReportService(
             reports=NextMeetingReportRepository(session),
             summaries=SummaryRepository(session),
+            calendar=CalendarEventRepository(session),
             synthesizer=build_synthesizer(settings),
         )
-        await service.generate(patient_id)
+        await service.generate(patient_id, meeting_id)
 
 
 class NextMeetingReportService:
@@ -67,30 +79,74 @@ class NextMeetingReportService:
         *,
         reports: NextMeetingReportRepository,
         summaries: SummaryRepository,
+        calendar: CalendarEventRepository,
         synthesizer: ReportSynthesizer,
         summary_limit: int = 8,
+        now: datetime | None = None,
     ) -> None:
         self._reports = reports
         self._summaries = summaries
+        self._calendar = calendar
         self._synthesizer = synthesizer
         self._summary_limit = summary_limit
+        self._now = now
 
-    async def create_pending(self, patient_id: uuid.UUID) -> StoredReport:
-        existing = await self._reports.get_by_patient_id(patient_id)
+    def _current_time(self) -> datetime:
+        return self._now if self._now is not None else datetime.now(UTC)
+
+    async def resolve_next_meeting(self, patient_id: uuid.UUID) -> CalendarEvent:
+        meeting = await self._calendar.find_active_meeting_for_patient(
+            patient_id,
+            now=self._current_time(),
+        )
+        if meeting is None:
+            raise NoUpcomingMeetingError(patient_id)
+        return meeting
+
+    async def verify_meeting_for_patient(
+        self,
+        patient_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> CalendarEvent:
+        try:
+            meeting = await self._calendar.get_meeting(meeting_id)
+        except CalendarEventNotFoundError as exc:
+            raise exc
+        if meeting.patient_id != patient_id:
+            raise MeetingPatientMismatchError(patient_id, meeting_id)
+        return meeting
+
+    async def create_pending(
+        self,
+        patient_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredReport:
+        existing = await self._reports.get_by_meeting_id(meeting_id)
         if existing is not None and existing.status in ("pending", "running"):
             return existing
-        return await self._reports.create_pending(patient_id)
+        return await self._reports.create_pending(patient_id, meeting_id)
 
-    async def get(self, patient_id: uuid.UUID) -> StoredReport | None:
-        return await self._reports.get_by_patient_id(patient_id)
+    async def get(self, meeting_id: uuid.UUID) -> StoredReport | None:
+        return await self._reports.get_by_meeting_id(meeting_id)
+
+    async def list_for_patient(self, patient_id: uuid.UUID) -> list[StoredReport]:
+        return await self._reports.list_for_patient(patient_id)
 
     async def latest_ready_summary_excerpt(
         self,
         patient_id: uuid.UUID,
         *,
+        before_start_at: datetime | None = None,
         max_chars: int = 600,
     ) -> str | None:
-        ready = await self._summaries.list_ready_for_patient(patient_id, limit=1)
+        if before_start_at is not None:
+            ready = await self._summaries.list_ready_before_meeting(
+                patient_id,
+                before_start_at=before_start_at,
+                limit=1,
+            )
+        else:
+            ready = await self._summaries.list_ready_for_patient(patient_id, limit=1)
         if not ready:
             return None
         text = ready[0].text.strip()
@@ -98,33 +154,33 @@ class NextMeetingReportService:
             return text
         return text[: max_chars - 1].rstrip() + "…"
 
-    async def generate(self, patient_id: uuid.UUID) -> None:
-        ready = await self._summaries.list_ready_for_patient(
+    async def generate(self, patient_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+        meeting = await self.verify_meeting_for_patient(patient_id, meeting_id)
+        ready = await self._summaries.list_ready_before_meeting(
             patient_id,
+            before_start_at=meeting.start_at,
             limit=self._summary_limit,
         )
         if not ready:
-            await self._reports.mark_failed(patient_id, error=NO_READY_SUMMARIES_ERROR)
+            await self._reports.mark_failed(meeting_id, error=NO_READY_SUMMARIES_ERROR)
             return
 
-        # Chronological for the model (oldest → newest); repo returns newest first.
         chronological = list(reversed(ready))
-        await self._reports.mark_running(patient_id)
+        await self._reports.mark_running(meeting_id)
 
         try:
             generated = await self._synthesizer.synthesize(summaries=chronological)
         except Exception as exc:
             logger.error("next-meeting report generation failed", exc_info=exc)
-            await self._reports.mark_failed(patient_id, error=str(exc))
+            await self._reports.mark_failed(meeting_id, error=str(exc))
             return
 
         open_topics = list(generated.open_topics)
         if not open_topics:
-            # Newest summary first in `ready`; fall back to its follow-up bullets.
             open_topics = bullets_under_heading(ready[0].text, FOLLOWUP_HEADING)
 
         await self._reports.mark_ready(
-            patient_id,
+            meeting_id,
             intro=generated.intro,
             changes=generated.changes,
             open_topics=open_topics,

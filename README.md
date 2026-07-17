@@ -13,7 +13,6 @@ A FastAPI service (Python 3.11+).
 ```bash
 # Create and activate a virtual environment
 python -m venv .venv
-conda deactivate 2>/dev/null || true   # avoid conda shadowing .venv/bin (see Troubleshooting)
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 # Install runtime + dev dependencies
@@ -25,6 +24,19 @@ cp .env.example .env
 
 > `requirements-dev.txt` includes everything in `requirements.txt` plus the test/lint tools.
 > For a production install, use `pip install -r requirements.txt`.
+
+## Terminology
+
+A **meeting** is a scheduled therapy session. It is stored as a row in the
+`calendar_events` table. Throughout the API:
+
+- `meeting_id` on summaries, transcripts, prep reports, and audio upload =
+  `calendar_events.id`
+- `/calendar/{meeting_id}` manages the schedule; `/meetings/{meeting_id}/summary`
+  and related routes attach session artifacts to the same id
+
+The `/calendar` URL prefix and `calendar_events` table name are legacy; new code
+should prefer **meeting** in parameter and field names.
 
 ## Transcription
 
@@ -96,10 +108,16 @@ Use the project virtualenv (conda/base Python does not have API dependencies).
 Either activate it first, or use the Makefile (recommended):
 
 ```bash
-make check              # lint + format + mypy + unit tests
+make                    # default — full verification (see check-all below)
+make check-all          # lint + format + mypy + all tests (unit + integration; needs Docker)
+make check              # lint + format + mypy + unit tests only (faster, no Docker)
 make test               # unit tests only
-make test-all           # unit + integration (needs Docker)
+make test-all           # unit + integration tests only (needs Docker)
 ```
+
+**Before opening a PR or pushing**, run `make` (or `make check-all`) from `senseiapi/`.
+That is the project's default testing target: ruff lint, format check, mypy, and the
+full pytest suite including integration tests.
 
 Or manually after `source .venv/bin/activate` (and `conda deactivate` if you use Anaconda):
 
@@ -110,14 +128,6 @@ mypy .                  # static type checks
 python -m pytest -m "not integration"   # unit tests (prefer over bare `pytest`)
 ```
 
-### Troubleshooting tests
-
-If `pytest` fails with `ModuleNotFoundError` for packages you already installed:
-
-1. **Conda is shadowing the venv** — your prompt may show `(base)` and `(.venv)` together. Run `conda deactivate`, then `source .venv/bin/activate`, and confirm `which python` points at `senseiapi/.venv/bin/python`.
-2. **Use the venv interpreter explicitly** — `python -m pytest` or `make test` always use the right Python.
-3. **Venv was moved or copied** — reinstall CLI entry points: `pip install --force-reinstall -r requirements-dev.txt`.
-
 Auto-fix what's fixable:
 
 ```bash
@@ -127,14 +137,38 @@ ruff format .
 
 ## Testing
 
-Yes — the API has a full test suite (168 tests: 154 unit, 14 integration). It covers auth, patients, calendar, audio/transcription, summaries, reports, and DB wiring. CI runs these; you should run unit tests before PRs.
-
 - Tests live in `tests/` and are named `test_*.py`.
-- Run with `make test` or `python -m pytest` (not bare `pytest` when conda is active).
+- Default verification: `make` from `senseiapi/` (runs lint, format check, mypy, and all tests).
+- Run the suite with `pytest` (or `pytest -q` for quiet output).
 - Endpoints are tested via `fastapi.testclient.TestClient`; assert both status code and response body.
 - Database integration tests use Testcontainers and require Docker.
 - Run `pytest -m "not integration"` to skip integration tests.
 - Cover the happy path, edge cases, and failure paths.
+
+## Database migrations
+
+Schema is created via SQLAlchemy `create_all` on startup, which does **not** alter existing tables.
+If you already have a `next_meeting_reports` table from an older deploy (one row per `patient_id`),
+apply this one-time migration before restarting the API:
+
+```sql
+-- Drop legacy rows that cannot be mapped to a meeting (optional in dev)
+DELETE FROM next_meeting_reports;
+
+ALTER TABLE next_meeting_reports
+  ADD COLUMN IF NOT EXISTS meeting_id UUID REFERENCES calendar_events(id) ON DELETE CASCADE;
+
+ALTER TABLE next_meeting_reports DROP CONSTRAINT IF EXISTS next_meeting_reports_patient_id_key;
+ALTER TABLE next_meeting_reports DROP CONSTRAINT IF EXISTS next_meeting_reports_meeting_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS ix_next_meeting_reports_meeting_id
+  ON next_meeting_reports(meeting_id);
+CREATE INDEX IF NOT EXISTS ix_next_meeting_reports_patient_id
+  ON next_meeting_reports(patient_id);
+
+ALTER TABLE next_meeting_reports ALTER COLUMN meeting_id SET NOT NULL;
+```
+
+Fresh environments get the correct schema automatically from [`reports/orm.py`](reports/orm.py).
 
 ## Project structure
 
