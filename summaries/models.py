@@ -30,6 +30,7 @@ class Summary:
 class StoredSummary:
     """A summary row: the only place a background failure can be recorded."""
 
+    user_id: uuid.UUID
     id: uuid.UUID
     meeting_id: uuid.UUID
     status: SummaryStatus

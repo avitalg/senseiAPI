@@ -24,5 +24,5 @@ class CalendarEvent:
     start_at: datetime
     end_at: datetime
     created_at: datetime
-    therapist_id: uuid.UUID
+    user_id: uuid.UUID
     patient_id: uuid.UUID | None = None

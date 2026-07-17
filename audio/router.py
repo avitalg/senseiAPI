@@ -24,6 +24,8 @@ from audio.models import (
 )
 from audio.schemas import AudioFileInfo, AudioUploadResponse, diarized_segments_from_transcript
 from audio.service import AudioService
+from auth.router import get_current_user
+from auth.schemas import User
 from calendar_events.models import CalendarEventNotFoundError
 from core.database import OptionalSessionDep, SettingsDep
 from patients.models import PatientNotFoundError
@@ -45,13 +47,14 @@ async def upload_audio(
     db: OptionalSessionDep,
     background_tasks: BackgroundTasks,
     settings: SettingsDep,
+    current_user: User = Depends(get_current_user),
     service: AudioService = Depends(get_audio_service),
     file: UploadFile = File(...),
     patient_id: uuid.UUID | None = Form(None),
     meeting_id: uuid.UUID | None = Form(None),
 ) -> AudioUploadResponse:
     try:
-        saved, transcript = await service.upload_and_transcribe(file)
+        saved, transcript = await service.upload_and_transcribe(current_user.user_id, file)
     except (
         UnsupportedAudioTypeError,
         EmptyAudioError,
@@ -73,6 +76,7 @@ async def upload_audio(
             )
         try:
             stored = await TranscriptService(db).save_for_upload(
+                user_id=current_user.user_id,
                 meeting_id=meeting_id,
                 patient_id=patient_id,
                 raw_text=transcript.text,
@@ -113,8 +117,13 @@ async def upload_audio(
             # The pending row is written here, inside the request, rather than by the
             # background job: a client polling in the gap between this response and the
             # job starting would otherwise get a 404 for a summary that is on its way.
-            await summary_service.create_pending(stored.meeting_id)
-            background_tasks.add_task(run_summary_generation, stored.meeting_id, settings)
+            await summary_service.create_pending(current_user.user_id, stored.meeting_id)
+            background_tasks.add_task(
+                run_summary_generation,
+                current_user.user_id,
+                stored.meeting_id,
+                settings
+            )
 
     return AudioUploadResponse.from_upload(
         saved,
@@ -126,19 +135,21 @@ async def upload_audio(
 
 @router.get("", response_model=list[AudioFileInfo])
 async def list_audio_files(
+    current_user: User = Depends(get_current_user),
     service: AudioService = Depends(get_audio_service),
 ) -> list[AudioFileInfo]:
-    files = await service.list_files()
+    files = await service.list_files(current_user.user_id)
     return [AudioFileInfo.from_stored(file) for file in files]
 
 
 @router.get("/{audio_id}", response_class=FileResponse)
 async def download_audio(
     audio_id: str,
+    current_user: User = Depends(get_current_user),
     service: AudioService = Depends(get_audio_service),
 ) -> FileResponse:
     try:
-        path = await service.get_path(audio_id)
+        path = await service.get_path(current_user.user_id, audio_id)
     except AudioNotFoundError as exc:
         raise_for_loader_error(exc)
     media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -148,10 +159,11 @@ async def download_audio(
 @router.delete("/{audio_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_audio(
     audio_id: str,
+    current_user: User = Depends(get_current_user),
     service: AudioService = Depends(get_audio_service),
 ) -> None:
     try:
-        await service.delete(audio_id)
+        await service.delete(current_user.user_id, audio_id)
     except AudioNotFoundError as exc:
         raise_for_loader_error(exc)
 
@@ -159,10 +171,11 @@ async def delete_audio(
 @router.post("/{audio_id}/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(
     audio_id: str,
+    current_user: User = Depends(get_current_user),
     service: AudioService = Depends(get_audio_service),
 ) -> TranscriptionResponse:
     try:
-        transcript = await service.transcribe(audio_id)
+        transcript = await service.transcribe(current_user.user_id, audio_id)
     except AudioNotFoundError as exc:
         raise_for_loader_error(exc)
     except TranscriptionFailedError as exc:

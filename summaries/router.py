@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
+from auth.router import get_current_user
 from core.database import SessionDep, SettingsDep
 from summaries.dependencies import get_summary_reader, get_summary_service
 from summaries.repository import SummaryRepository
@@ -63,6 +64,7 @@ async def start_meeting_summary(
 async def get_meeting_summary(
     meeting_id: uuid.UUID,
     response: Response,
+    current_user: User = Depends(get_current_user),
     summaries: SummaryRepository = Depends(get_summary_reader),
 ) -> SummaryResponse:
     """Fetch the session summary.
@@ -73,7 +75,7 @@ async def get_meeting_summary(
     The summary is a drafting aid the therapist reviews. It is not a clinical record,
     and it must never be relied on to catch a risk disclosure.
     """
-    summary = await summaries.get_by_meeting_id(meeting_id)
+    summary = await summaries.get_by_meeting_id(current_user.user_id, meeting_id)
     if summary is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

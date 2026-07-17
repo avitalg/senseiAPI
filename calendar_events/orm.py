@@ -10,10 +10,11 @@ from core.database import Base
 class CalendarEventRecord(Base):
     __tablename__ = "calendar_events"
     __table_args__ = (
-        Index("ix_calendar_events_therapist_start_at", "therapist_id", "start_at"),
-        Index("ix_calendar_events_therapist_end_at", "therapist_id", "end_at"),
+        Index("ix_calendar_events_user_start_at", "user_id", "start_at"),
+        Index("ix_calendar_events_user_end_at", "user_id", "end_at"),
     )
 
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(2000), nullable=True)
@@ -24,5 +25,4 @@ class CalendarEventRecord(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
-    therapist_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     patient_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)

@@ -11,6 +11,7 @@ from summaries.orm import SummaryRecord
 
 def to_summary(record: SummaryRecord) -> StoredSummary:
     return StoredSummary(
+        user_id=record.user_id,
         id=record.id,
         meeting_id=record.meeting_id,
         status=record.status,  # type: ignore[arg-type]
@@ -26,9 +27,16 @@ class SummaryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def _record_for(self, meeting_id: uuid.UUID) -> SummaryRecord | None:
+    async def _record_for(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> SummaryRecord | None:
         result = await self._session.execute(
-            select(SummaryRecord).where(SummaryRecord.meeting_id == meeting_id)
+            select(SummaryRecord).where(
+                SummaryRecord.user_id == user_id,
+                SummaryRecord.meeting_id == meeting_id,
+            )
         )
         return result.scalar_one_or_none()
 
@@ -38,10 +46,21 @@ class SummaryRepository:
         await self._session.refresh(record)
         return to_summary(record)
 
-    async def create_pending(self, meeting_id: uuid.UUID, *, model: str = "") -> StoredSummary:
-        record = await self._record_for(meeting_id)
+    async def create_pending(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        model: str = "",
+    ) -> StoredSummary:
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
-            record = SummaryRecord(meeting_id=meeting_id, status="pending", model=model)
+            record = SummaryRecord(
+                user_id=user_id,
+                meeting_id=meeting_id,
+                status="pending",
+                model=model,
+            )
         else:
             # Re-requesting a summary resets the row rather than stacking a second one.
             record.status = "pending"
@@ -49,33 +68,50 @@ class SummaryRepository:
             record.error = None
         return await self._save(record)
 
-    async def mark_running(self, meeting_id: uuid.UUID) -> StoredSummary:
-        record = await self._record_for(meeting_id)
+    async def mark_running(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredSummary:
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
-            record = SummaryRecord(meeting_id=meeting_id)
+            record = SummaryRecord(user_id=user_id, meeting_id=meeting_id)
         record.status = "running"
         return await self._save(record)
 
-    async def mark_ready(self, meeting_id: uuid.UUID, *, text: str, model: str) -> StoredSummary:
-        record = await self._record_for(meeting_id)
+    async def mark_ready(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        text: str,
+        model: str,
+    ) -> StoredSummary:
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
-            record = SummaryRecord(meeting_id=meeting_id)
+            record = SummaryRecord(user_id=user_id, meeting_id=meeting_id)
         record.status = "ready"
         record.text = text
         record.model = model
         record.error = None
         return await self._save(record)
 
-    async def mark_failed(self, meeting_id: uuid.UUID, *, error: str) -> StoredSummary:
-        record = await self._record_for(meeting_id)
+    async def mark_failed(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        error: str,
+    ) -> StoredSummary:
+        record = await self._record_for(user_id, meeting_id)
         if record is None:
-            record = SummaryRecord(meeting_id=meeting_id)
+            record = SummaryRecord(user_id=user_id, meeting_id=meeting_id)
         record.status = "failed"
         record.error = error
         return await self._save(record)
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredSummary | None:
-        record = await self._record_for(meeting_id)
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredSummary | None:
+        record = await self._record_for(user_id, meeting_id)
         return to_summary(record) if record else None
 
     async def list_running(self) -> list[StoredSummary]:
