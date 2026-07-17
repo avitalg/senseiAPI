@@ -10,6 +10,7 @@ from transcripts.orm import TranscriptRecord
 
 def to_transcript(record: TranscriptRecord) -> StoredTranscript:
     return StoredTranscript(
+        user_id=record.user_id,
         id=record.id,
         meeting_id=record.meeting_id,
         raw_text=record.raw_text,
@@ -26,12 +27,14 @@ class TranscriptRepository:
     async def create(
         self,
         *,
+        user_id: uuid.UUID,
         meeting_id: uuid.UUID,
         raw_text: str,
         language: str = "he",
         diarized_segments: list[dict[str, Any]] | None = None,
     ) -> StoredTranscript:
         record = TranscriptRecord(
+            user_id=user_id,
             meeting_id=meeting_id,
             raw_text=raw_text,
             language=language or "he",
@@ -42,13 +45,30 @@ class TranscriptRepository:
         await self._session.refresh(record)
         return to_transcript(record)
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredTranscript | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredTranscript | None:
         result = await self._session.execute(
-            select(TranscriptRecord).where(TranscriptRecord.meeting_id == meeting_id)
+            select(TranscriptRecord).where(
+                TranscriptRecord.user_id == user_id,
+                TranscriptRecord.meeting_id == meeting_id,
+            )
         )
         record = result.scalar_one_or_none()
         return to_transcript(record) if record else None
 
-    async def get_by_id(self, transcript_id: uuid.UUID) -> StoredTranscript | None:
-        record = await self._session.get(TranscriptRecord, transcript_id)
+    async def get_by_id(
+        self,
+        user_id: uuid.UUID,
+        transcript_id: uuid.UUID,
+    ) -> StoredTranscript | None:
+        result = await self._session.execute(
+            select(TranscriptRecord).where(
+                TranscriptRecord.user_id == user_id,
+                TranscriptRecord.id == transcript_id,
+            )
+        )
+        record = result.scalar_one_or_none()
         return to_transcript(record) if record else None

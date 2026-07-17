@@ -37,7 +37,7 @@ class CalendarEventOut(BaseModel):
     start_at: datetime
     end_at: datetime
     created_at: datetime
-    therapist_id: uuid.UUID
+    user_id: uuid.UUID
     patient_id: uuid.UUID | None = None
 
     @classmethod
@@ -54,6 +54,6 @@ class CalendarEventOut(BaseModel):
             start_at=in_time_zone(event.start_at),
             end_at=in_time_zone(event.end_at),
             created_at=in_time_zone(event.created_at),
-            therapist_id=event.therapist_id,
+            user_id=event.user_id,
             patient_id=event.patient_id,
         )

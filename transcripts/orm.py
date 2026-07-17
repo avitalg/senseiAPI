@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import DateTime, ForeignKeyConstraint, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,13 +13,20 @@ class TranscriptRecord(Base):
     """Persisted transcript for a therapy meeting."""
 
     __tablename__ = "transcripts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "meeting_id"],
+            ["calendar_events.user_id", "calendar_events.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("user_id", "meeting_id", name="uq_transcripts_user_meeting"),
+    )
 
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     # meeting_id references calendar_events.id (same entity as API meeting_id).
     meeting_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("calendar_events.id", ondelete="CASCADE"),
-        unique=True,
         index=True,
     )
     raw_text: Mapped[str] = mapped_column(Text)

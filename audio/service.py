@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,8 +18,12 @@ class AudioService:
         self._transcriber = transcriber
         self._language = language
 
-    async def upload_and_transcribe(self, file: UploadFile) -> tuple[SavedAudio, Transcript]:
-        saved = await self._loader.save(file)
+    async def upload_and_transcribe(
+        self,
+        user_id: uuid.UUID,
+        file: UploadFile,
+    ) -> tuple[SavedAudio, Transcript]:
+        saved = await self._loader.save(user_id, file)
         try:
             transcript = await self._transcriber.transcribe(
                 data=saved.data,
@@ -28,11 +33,11 @@ class AudioService:
         except Exception:
             # Keep the file on transcription failure so the client can retry.
             raise
-        await self._loader.delete(saved.id)
+        await self._loader.delete(user_id, saved.id)
         return saved, transcript
 
-    async def transcribe(self, audio_id: str) -> Transcript:
-        filename, data = await self._loader.read(audio_id)
+    async def transcribe(self, user_id: uuid.UUID, audio_id: str) -> Transcript:
+        filename, data = await self._loader.read(user_id, audio_id)
         try:
             transcript = await self._transcriber.transcribe(
                 data=data,
@@ -42,14 +47,14 @@ class AudioService:
         except Exception:
             # Keep the file on transcription failure so the client can retry.
             raise
-        await self._loader.delete(audio_id)
+        await self._loader.delete(user_id, audio_id)
         return transcript
 
-    async def list_files(self) -> Sequence[StoredAudioFile]:
-        return await self._loader.list_files()
+    async def list_files(self, user_id: uuid.UUID) -> Sequence[StoredAudioFile]:
+        return await self._loader.list_files(user_id)
 
-    async def get_path(self, audio_id: str) -> Path:
-        return await self._loader.get_path(audio_id)
+    async def get_path(self, user_id: uuid.UUID, audio_id: str) -> Path:
+        return await self._loader.get_path(user_id, audio_id)
 
-    async def delete(self, audio_id: str) -> None:
-        await self._loader.delete(audio_id)
+    async def delete(self, user_id: uuid.UUID, audio_id: str) -> None:
+        await self._loader.delete(user_id, audio_id)

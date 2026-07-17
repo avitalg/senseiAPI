@@ -34,6 +34,7 @@ async def fail_interrupted_summaries(summaries: SummaryRepository) -> int:
     stranded = await summaries.list_running()
     for summary in stranded:
         await summaries.mark_failed(
+            summary.user_id,
             summary.meeting_id,
             error="generation was interrupted by a server restart",
         )
@@ -79,16 +80,20 @@ class SummaryService:
         self._summarizer = summarizer
         self._max_transcript_chars = max_transcript_chars
 
-    async def create_pending(self, meeting_id: uuid.UUID) -> StoredSummary:
-        return await self._summaries.create_pending(meeting_id)
+    async def create_pending(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredSummary:
+        return await self._summaries.create_pending(user_id, meeting_id)
 
-    async def get(self, meeting_id: uuid.UUID) -> StoredSummary | None:
+    async def get(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredSummary | None:
         return await self._summaries.get_by_meeting_id(meeting_id)
 
-    async def generate(self, meeting_id: uuid.UUID) -> None:
+    async def generate(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
         transcript = await self._transcripts.get_by_meeting_id(meeting_id)
         if transcript is None:
-            await self._summaries.mark_failed(meeting_id, error="no transcript for this meeting")
+            await self._summaries.mark_failed(
+                user_id,
+                meeting_id,
+                error="no transcript for this meeting",
+            )
             return
 
         # Ollama truncates silently past its context window, so an over-long transcript
@@ -96,6 +101,7 @@ class SummaryService:
         # all. Fail where the therapist can see it instead of summarising a fragment.
         if len(transcript.raw_text) > self._max_transcript_chars:
             await self._summaries.mark_failed(
+                user_id,
                 meeting_id,
                 error=(
                     f"transcript exceeds the context window "
@@ -104,7 +110,7 @@ class SummaryService:
             )
             return
 
-        await self._summaries.mark_running(meeting_id)
+        await self._summaries.mark_running(user_id, meeting_id)
 
         try:
             summary = await self._summarizer.summarize(
@@ -112,13 +118,18 @@ class SummaryService:
                 language=transcript.language,
             )
         except SummaryFailedError as exc:
-            await self._summaries.mark_failed(meeting_id, error=str(exc))
+            await self._summaries.mark_failed(user_id, meeting_id, error=str(exc))
             return
         except Exception as exc:
             # Nothing is awaiting this task, so an escaping error would disappear into the
             # event loop and strand the row in "running" forever.
             logger.error("summary generation failed", exc_info=exc)
-            await self._summaries.mark_failed(meeting_id, error=str(exc))
+            await self._summaries.mark_failed(user_id, meeting_id, error=str(exc))
             return
 
-        await self._summaries.mark_ready(meeting_id, text=summary.text, model=summary.model)
+        await self._summaries.mark_ready(
+            user_id,
+            meeting_id,
+            text=summary.text,
+            model=summary.model,
+        )

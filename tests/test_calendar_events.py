@@ -12,7 +12,7 @@ from main import app
 from tests.conftest import ClientFactory
 from tests.database_helpers import get_database_url
 
-THERAPIST_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
+USER_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
 EVENT_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 OTHER_EVENT_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 OTHER_EVENT_ID2 = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
@@ -37,7 +37,7 @@ class _FakeCalendarEventService:
                 start_at=START_AT,
                 end_at=END_AT,
                 created_at=CREATED_AT,
-                therapist_id=THERAPIST_ID,
+                user_id=USER_ID,
                 patient_id=PATIENT_ID,
             ),
             CalendarEvent(
@@ -47,7 +47,7 @@ class _FakeCalendarEventService:
                 start_at=OTHER_START_AT,
                 end_at=OTHER_END_AT,
                 created_at=CREATED_AT,
-                therapist_id=THERAPIST_ID,
+                user_id=USER_ID,
                 patient_id=None,
             ),
             CalendarEvent(
@@ -57,7 +57,7 @@ class _FakeCalendarEventService:
                 start_at=OTHER_START_AT2,
                 end_at=OTHER_END_AT2,
                 created_at=CREATED_AT,
-                therapist_id=THERAPIST_ID,
+                user_id=USER_ID,
                 patient_id=None,
             ),
         ]
@@ -65,6 +65,7 @@ class _FakeCalendarEventService:
     async def add_event(
         self,
         *,
+        user_id: uuid.UUID,
         title: str,
         start_at: datetime,
         end_at: datetime,
@@ -78,19 +79,20 @@ class _FakeCalendarEventService:
             start_at=start_at,
             end_at=end_at,
             created_at=CREATED_AT,
-            therapist_id=THERAPIST_ID,
+            user_id=user_id,
             patient_id=patient_id,
         )
 
     async def list_events(
         self,
         *,
+        user_id: uuid.UUID,
         from_at: datetime,
         to_at: datetime,
     ) -> list[CalendarEvent]:
         return [event for event in self._events if from_at <= event.start_at < to_at]
 
-    async def get_meeting(self, meeting_id: uuid.UUID) -> CalendarEvent:
+    async def get_meeting(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> CalendarEvent:
         for event in self._events:
             if event.id == meeting_id:
                 return event
@@ -98,6 +100,7 @@ class _FakeCalendarEventService:
 
     async def update_meeting(
         self,
+        user_id: uuid.UUID,
         meeting_id: uuid.UUID,
         updates: dict[str, object],
     ) -> CalendarEvent:
@@ -126,14 +129,14 @@ class _FakeCalendarEventService:
                 start_at=start_at,
                 end_at=end_at,
                 created_at=event.created_at,
-                therapist_id=event.therapist_id,
+                user_id=event.user_id,
                 patient_id=patient_id,
             )
             self._events[index] = updated
             return updated
         raise CalendarEventNotFoundError(meeting_id)
 
-    async def delete_meeting(self, meeting_id: uuid.UUID) -> None:
+    async def delete_meeting(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
         if meeting_id not in self._event_ids:
             raise CalendarEventNotFoundError(meeting_id)
         self._event_ids.remove(meeting_id)

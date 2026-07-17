@@ -9,6 +9,7 @@ from summaries.summarizer import Summarizer
 from transcripts.models import StoredTranscript
 
 MEETING_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+USER_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 HEBREW_SUMMARY = "## נושאים מרכזיים\nחרדה במהלך השבוע."
 
 
@@ -36,10 +37,11 @@ class _FakeSummaryRepository:
         self.rows: dict[uuid.UUID, StoredSummary] = {}
         self.transitions: list[str] = []
 
-    def _row(self, meeting_id: uuid.UUID, **changes: object) -> StoredSummary:
+    def _row(self, user_id: uuid.UUID, meeting_id: uuid.UUID, **changes: object) -> StoredSummary:
         now = datetime.now(UTC)
         current = self.rows.get(meeting_id)
         base = {
+            "user_id": user_id,
             "id": current.id if current else uuid.uuid4(),
             "meeting_id": meeting_id,
             "status": "pending",
@@ -55,19 +57,36 @@ class _FakeSummaryRepository:
         self.transitions.append(row.status)
         return row
 
-    async def create_pending(self, meeting_id: uuid.UUID) -> StoredSummary:
-        return self._row(meeting_id, status="pending")
+    async def create_pending(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredSummary:
+        return self._row(user_id, meeting_id, status="pending")
 
-    async def mark_running(self, meeting_id: uuid.UUID) -> StoredSummary:
-        return self._row(meeting_id, status="running")
+    async def mark_running(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredSummary:
+        return self._row(user_id, meeting_id, status="running")
 
-    async def mark_ready(self, meeting_id: uuid.UUID, *, text: str, model: str) -> StoredSummary:
-        return self._row(meeting_id, status="ready", text=text, model=model)
+    async def mark_ready(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        text: str,
+        model: str,
+    ) -> StoredSummary:
+        return self._row(user_id, meeting_id, status="ready", text=text, model=model)
 
-    async def mark_failed(self, meeting_id: uuid.UUID, *, error: str) -> StoredSummary:
-        return self._row(meeting_id, status="failed", error=error)
+    async def mark_failed(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+        *,
+        error: str,
+    ) -> StoredSummary:
+        return self._row(user_id, meeting_id, status="failed", error=error)
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredSummary | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredSummary | None:
         return self.rows.get(meeting_id)
 
     async def list_running(self) -> list[StoredSummary]:
@@ -78,12 +97,17 @@ class _FakeTranscriptRepository:
     def __init__(self, transcript: StoredTranscript | None) -> None:
         self._transcript = transcript
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredTranscript | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredTranscript | None:
         return self._transcript
 
 
 def _transcript(raw_text: str) -> StoredTranscript:
     return StoredTranscript(
+        user_id=USER_ID,
         id=uuid.uuid4(),
         meeting_id=MEETING_ID,
         raw_text=raw_text,
@@ -113,9 +137,9 @@ def _service(
 @pytest.mark.anyio
 async def test_generate_marks_the_summary_ready_with_the_models_text() -> None:
     service, repo = _service(transcript=_transcript("מטפל: שלום."), summarizer=_FakeSummarizer())
-    await repo.create_pending(MEETING_ID)
+    await repo.create_pending(USER_ID, MEETING_ID)
 
-    await service.generate(MEETING_ID)
+    await service.generate(USER_ID, MEETING_ID)
 
     row = repo.rows[MEETING_ID]
     assert row.status == "ready"
@@ -134,7 +158,7 @@ async def test_generate_fails_an_over_long_transcript_without_calling_the_model(
         max_transcript_chars=500,
     )
 
-    await service.generate(MEETING_ID)
+    await service.generate(USER_ID, MEETING_ID)
 
     assert summarizer.calls == []
     row = repo.rows[MEETING_ID]
@@ -150,7 +174,7 @@ async def test_generate_records_a_model_failure_on_the_row() -> None:
         summarizer=_FakeSummarizer(error=SummaryFailedError("connection refused")),
     )
 
-    await service.generate(MEETING_ID)
+    await service.generate(USER_ID, MEETING_ID)
 
     row = repo.rows[MEETING_ID]
     assert row.status == "failed"
@@ -161,7 +185,7 @@ async def test_generate_records_a_model_failure_on_the_row() -> None:
 async def test_generate_fails_when_there_is_no_transcript() -> None:
     service, repo = _service(transcript=None, summarizer=_FakeSummarizer())
 
-    await service.generate(MEETING_ID)
+    await service.generate(USER_ID, MEETING_ID)
 
     assert repo.rows[MEETING_ID].status == "failed"
 
@@ -175,7 +199,7 @@ async def test_generate_never_raises_into_the_background_task() -> None:
         summarizer=_FakeSummarizer(error=RuntimeError("something unexpected")),
     )
 
-    await service.generate(MEETING_ID)
+    await service.generate(USER_ID, MEETING_ID)
 
     row = repo.rows[MEETING_ID]
     assert row.status == "failed"
@@ -187,7 +211,7 @@ async def test_startup_sweep_fails_rows_stranded_by_a_restart() -> None:
     """BackgroundTasks die with the process. Without this, the therapist's client spins
     on a 'running' summary that nothing is generating."""
     repo = _FakeSummaryRepository()
-    await repo.mark_running(MEETING_ID)
+    await repo.mark_running(USER_ID, MEETING_ID)
 
     await fail_interrupted_summaries(repo)  # type: ignore[arg-type]
 

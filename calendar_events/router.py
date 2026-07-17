@@ -7,10 +7,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 
+from auth.router import get_current_user
+from auth.schemas import User
 from calendar_events.dependencies import get_calendar_event_service
 from calendar_events.models import CalendarEventNotFoundError
 from calendar_events.schemas import CalendarEventCreate, CalendarEventOut, CalendarEventUpdate
 from calendar_events.service import CalendarEventService
+from patients.models import PatientNotFoundError
 
 logger = logging.getLogger(__name__)
 ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
@@ -79,17 +82,24 @@ def resolve_list_date_range(
 async def add_event(
     payload: CalendarEventCreate,
     time_zone: Annotated[str, Query()] = ISRAEL_TZ.key,
+    current_user: User = Depends(get_current_user),
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> CalendarEventOut:
     zone_info = get_time_zone(time_zone)
     try:
         event = await service.add_event(
+            user_id=current_user.user_id,
             title=payload.title,
             description=payload.description,
             start_at=in_utc(payload.start_at, zone_info),
             end_at=in_utc(payload.end_at, zone_info),
             patient_id=payload.patient_id,
         )
+    except PatientNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
     except SQLAlchemyError as exc:
         logger.error("failed to create calendar event", exc_info=exc)
         raise HTTPException(
@@ -104,6 +114,7 @@ async def list_events(
     from_date: Annotated[date | None, Query(alias="from")] = None,
     to_date: Annotated[date | None, Query(alias="to")] = None,
     time_zone: Annotated[str, Query()] = ISRAEL_TZ.key,
+    current_user: User = Depends(get_current_user),
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> list[CalendarEventOut]:
     zone_info = get_time_zone(time_zone)
@@ -121,6 +132,7 @@ async def list_events(
     from_at, to_at = list_date_range_to_utc(resolved_from, resolved_to, zone_info)
     try:
         events = await service.list_events(
+            user_id=current_user.user_id,
             from_at=from_at,
             to_at=to_at,
         )
@@ -137,11 +149,12 @@ async def list_events(
 async def get_event(
     meeting_id: uuid.UUID,
     time_zone: Annotated[str, Query()] = ISRAEL_TZ.key,
+    current_user: User = Depends(get_current_user),
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> CalendarEventOut:
     zone_info = get_time_zone(time_zone)
     try:
-        event = await service.get_meeting(meeting_id)
+        event = await service.get_meeting(current_user.user_id, meeting_id)
     except CalendarEventNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -161,6 +174,7 @@ async def update_event(
     meeting_id: uuid.UUID,
     payload: CalendarEventUpdate,
     time_zone: Annotated[str, Query()] = ISRAEL_TZ.key,
+    current_user: User = Depends(get_current_user),
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> CalendarEventOut:
     zone_info = get_time_zone(time_zone)
@@ -171,10 +185,16 @@ async def update_event(
         updates["end_at"] = in_utc(payload.end_at, zone_info)
     try:
         event = await service.update_meeting(
+            current_user.user_id,
             meeting_id,
             updates,
         )
     except CalendarEventNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PatientNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
@@ -190,11 +210,12 @@ async def update_event(
 
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
-    meeting_id: uuid.UUID,
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     service: CalendarEventService = Depends(get_calendar_event_service),
 ) -> None:
     try:
-        await service.delete_meeting(meeting_id)
+        await service.delete_event(current_user.user_id, event_id)
     except CalendarEventNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

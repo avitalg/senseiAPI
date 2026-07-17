@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from auth.router import TEST_USER_ID
 from tests.conftest import ClientFactory
 from transcription.models import Transcript, TranscriptionFailedError, Word
 from transcription.transcriber import Transcriber
@@ -10,8 +11,9 @@ HEBREW_TEXT = "שלום, זאת הקלטת בדיקה."
 def _seed_audio(
     upload_dir: Path, *, name: str = "voice.m4a", content: bytes = b"fake-audio-bytes"
 ) -> str:
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    (upload_dir / name).write_bytes(content)
+    user_upload_dir = upload_dir / str(TEST_USER_ID)
+    user_upload_dir.mkdir(parents=True, exist_ok=True)
+    (user_upload_dir / name).write_bytes(content)
     return name
 
 
@@ -70,4 +72,4 @@ def test_transcribe_provider_failure_keeps_file(make_client: ClientFactory) -> N
 
     res = client.post(f"/audio/{audio_id}/transcribe")
     assert res.status_code == 502
-    assert (settings.upload_dir / audio_id).exists()
+    assert (settings.upload_dir / str(TEST_USER_ID) / audio_id).exists()

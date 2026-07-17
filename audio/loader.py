@@ -1,4 +1,5 @@
 import logging
+import uuid
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from uuid import uuid4
@@ -53,7 +54,7 @@ class AudioLoader:
         self._max_bytes = max_bytes
         self._allowed_types = frozenset(allowed_types)
 
-    async def save(self, file: UploadFile) -> SavedAudio:
+    async def save(self, user_id: uuid.UUID, file: UploadFile) -> SavedAudio:
         """Validate and persist an uploaded audio file, returning its metadata."""
         content_type = file.content_type or ""
         if content_type not in self._allowed_types:
@@ -66,7 +67,9 @@ class AudioLoader:
             raise AudioTooLargeError(len(data), self._max_bytes)
 
         stored_name = f"{uuid4().hex}{self._extension_for(file.filename, content_type)}"
-        await run_in_threadpool(self._write_file, self._upload_dir / stored_name, data)
+        await run_in_threadpool(
+            self._write_file, self._user_upload_dir(user_id) / stored_name, data
+        )
         logger.info(
             "stored audio upload",
             extra={"stored_name": stored_name, "size_bytes": len(data)},
@@ -80,19 +83,19 @@ class AudioLoader:
             data=data,
         )
 
-    async def list_files(self) -> Sequence[StoredAudioFile]:
-        return await run_in_threadpool(self._list_sync)
+    async def list_files(self, user_id: uuid.UUID) -> Sequence[StoredAudioFile]:
+        return await run_in_threadpool(self._list_sync, user_id)
 
-    async def get_path(self, audio_id: str) -> Path:
+    async def get_path(self, user_id: uuid.UUID, audio_id: str) -> Path:
         """Return the path to a stored audio file, raising ``AudioNotFoundError`` if missing."""
-        return await run_in_threadpool(self._resolve_existing, audio_id)
+        return await run_in_threadpool(self._resolve_existing, user_id, audio_id)
 
-    async def read(self, audio_id: str) -> tuple[str, bytes]:
+    async def read(self, user_id: uuid.UUID, audio_id: str) -> tuple[str, bytes]:
         """Return ``(filename, content)`` for a stored audio file."""
-        return await run_in_threadpool(self._read_sync, audio_id)
+        return await run_in_threadpool(self._read_sync, user_id, audio_id)
 
-    async def delete(self, audio_id: str) -> None:
-        await run_in_threadpool(self._delete_sync, audio_id)
+    async def delete(self, user_id: uuid.UUID, audio_id: str) -> None:
+        await run_in_threadpool(self._delete_sync, user_id, audio_id)
 
     @staticmethod
     def _extension_for(filename: str | None, content_type: str) -> str:
@@ -107,26 +110,30 @@ class AudioLoader:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
 
-    def _list_sync(self) -> list[StoredAudioFile]:
-        if not self._upload_dir.is_dir():
+    def _user_upload_dir(self, user_id: uuid.UUID) -> Path:
+        return self._upload_dir / str(user_id)
+
+    def _list_sync(self, user_id: uuid.UUID) -> list[StoredAudioFile]:
+        upload_dir = self._user_upload_dir(user_id)
+        if not upload_dir.is_dir():
             return []
         return [
             StoredAudioFile(id=path.name, size_bytes=path.stat().st_size)
-            for path in sorted(self._upload_dir.iterdir())
+            for path in sorted(upload_dir.iterdir())
             if path.is_file()
         ]
 
-    def _resolve_existing(self, audio_id: str) -> Path:
+    def _resolve_existing(self, user_id: uuid.UUID, audio_id: str) -> Path:
         if not _is_safe_audio_id(audio_id):
             raise AudioNotFoundError(audio_id)
-        path = self._upload_dir / audio_id
+        path = self._user_upload_dir(user_id) / audio_id
         if not path.is_file():
             raise AudioNotFoundError(audio_id)
         return path
 
-    def _read_sync(self, audio_id: str) -> tuple[str, bytes]:
-        path = self._resolve_existing(audio_id)
+    def _read_sync(self, user_id: uuid.UUID, audio_id: str) -> tuple[str, bytes]:
+        path = self._resolve_existing(user_id, audio_id)
         return path.name, path.read_bytes()
 
-    def _delete_sync(self, audio_id: str) -> None:
-        self._resolve_existing(audio_id).unlink()
+    def _delete_sync(self, user_id: uuid.UUID, audio_id: str) -> None:
+        self._resolve_existing(user_id, audio_id).unlink()
