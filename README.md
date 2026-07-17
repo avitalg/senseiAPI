@@ -148,8 +148,9 @@ ruff format .
 ## Database migrations
 
 Schema is created via SQLAlchemy `create_all` on startup, which does **not** alter existing tables.
-If you already have a `next_meeting_reports` table from an older deploy (one row per `patient_id`),
-apply this one-time migration before restarting the API:
+On startup, [`core/database.py`](core/database.py) also auto-migrates a legacy
+`next_meeting_reports` table (adds `meeting_id` when missing). If you need to run
+it manually (e.g. before upgrading the API), use:
 
 ```sql
 -- Drop legacy rows that cannot be mapped to a meeting (optional in dev)
