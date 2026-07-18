@@ -202,7 +202,7 @@ async def test_elevenlabs_synthesizer_collects_stream_and_maps_mp3_metadata() ->
     text_to_speech = _FakeTextToSpeech(chunks=(b"first-", b"second"))
     synthesizer = ElevenLabsSynthesizer(
         client=_FakeElevenLabsClient(text_to_speech),
-        model="eleven_multilingual_v2",
+        model="eleven_v3",
     )
 
     result = await synthesizer.synthesize(
@@ -222,7 +222,7 @@ async def test_elevenlabs_synthesizer_collects_stream_and_maps_mp3_metadata() ->
     assert voice_id == "voice-id"
     assert call["text"] == HEBREW_TEXT
     assert call["language_code"] == "he"
-    assert call["model_id"] == "eleven_multilingual_v2"
+    assert call["model_id"] == "eleven_v3"
     assert call["output_format"] == "mp3_44100_128"
     voice_settings = call["voice_settings"]
     assert isinstance(voice_settings, VoiceSettings)
@@ -234,7 +234,7 @@ async def test_elevenlabs_synthesizer_maps_wav_metadata() -> None:
     text_to_speech = _FakeTextToSpeech(chunks=(b"wav-audio",))
     synthesizer = ElevenLabsSynthesizer(
         client=_FakeElevenLabsClient(text_to_speech),
-        model="eleven_multilingual_v2",
+        model="eleven_v3",
     )
 
     result = await synthesizer.synthesize(
@@ -257,7 +257,7 @@ async def test_elevenlabs_synthesizer_wraps_provider_errors_without_logging_text
     text_to_speech = _FakeTextToSpeech(error=RuntimeError("401 unauthorized"))
     synthesizer = ElevenLabsSynthesizer(
         client=_FakeElevenLabsClient(text_to_speech),
-        model="eleven_multilingual_v2",
+        model="eleven_v3",
     )
 
     with pytest.raises(SpeechSynthesisFailedError, match="speech synthesis failed"):
@@ -276,7 +276,7 @@ async def test_elevenlabs_synthesizer_wraps_provider_errors_without_logging_text
 async def test_elevenlabs_synthesizer_rejects_empty_audio() -> None:
     synthesizer = ElevenLabsSynthesizer(
         client=_FakeElevenLabsClient(_FakeTextToSpeech()),
-        model="eleven_multilingual_v2",
+        model="eleven_v3",
     )
 
     with pytest.raises(SpeechSynthesisFailedError, match="empty audio"):

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -88,6 +90,18 @@ def test_settings_reads_tts_configuration_from_environment(
     assert settings.tts_timeout_seconds == 45
 
 
+def test_tts_defaults_to_hebrew_capable_eleven_v3(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("ELEVENLABS_TTS_MODEL", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    settings = Settings()
+
+    assert settings.elevenlabs_tts_model == "eleven_v3"
+
+
 def test_startup_settings_requires_auth_secret_when_security_enabled() -> None:
     settings = Settings(enable_security=True, auth_token_secret_key=None)
 
@@ -117,7 +131,7 @@ def _enabled_tts_settings(
     *,
     api_key: str | None = "test-api-key",
     voice_id: str | None = "voice-id",
-    model: str = "eleven_multilingual_v2",
+    model: str = "eleven_v3",
     language: str = "he",
     speed: float = 1.0,
     max_text_chars: int = 5_000,

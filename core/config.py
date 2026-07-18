@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # Text-to-speech is optional and uses the existing ElevenLabs account when enabled.
     tts_enabled: bool = False
     tts_backend: Literal["elevenlabs"] = "elevenlabs"
-    elevenlabs_tts_model: str = "eleven_multilingual_v2"
+    elevenlabs_tts_model: str = "eleven_v3"
     elevenlabs_tts_voice_id: str | None = None
     tts_default_language: str = "he"
     tts_default_speed: float = 1.0
