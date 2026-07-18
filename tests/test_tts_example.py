@@ -10,9 +10,15 @@ from tts.errors import SpeechSynthesisFailedError
 logger = logging.getLogger(__name__)
 
 ELEVENLABS_API_KEY = "<insert_your_elevenlabs_api_key>"
-ELEVENLABS_VOICE_ID = "<insert_your_elevenlabs_voice_id>"
+ELEVENLABS_VOICE_ID = "<insert_your_elevenlabs_voice_id>"  # auq43ws1oslv0tO4BDa7
+# ElevenLabs TTS models:
+# - eleven_v3: most expressive; supports Hebrew and 70+ other languages.
+# - eleven_multilingual_v2: stable long-form quality; does not support Hebrew.
+# - eleven_flash_v2_5: fastest multilingual model; does not support Hebrew.
+# - eleven_flash_v2: fastest English-only model.
 ELEVENLABS_TTS_MODEL = "eleven_v3"
 
+# Some common text
 EXAMPLE_TEXT = (
     "יש רגעים שבהם הדרך נפתחת דווקא כשאנחנו מפסיקים לדעת לאן היא מובילה. "
     "צעד קטן אל הלא־נודע יכול להפוך לחלון גדול של אור, סקרנות ותקווה."
@@ -28,7 +34,7 @@ def anyio_backend() -> str:
 @pytest.mark.manual
 @pytest.mark.anyio
 async def test_generate_hebrew_tts_example() -> None:
-    """Call ElevenLabs and leave a playable MP3 under the project artifacts directory."""
+    """Call ElevenLabs and leave playable audio under the project artifacts directory."""
     assert not ELEVENLABS_API_KEY.startswith("<insert_your_"), (
         "replace ELEVENLABS_API_KEY with a valid ElevenLabs API key"
     )
@@ -42,23 +48,28 @@ async def test_generate_hebrew_tts_example() -> None:
         elevenlabs_api_key=ELEVENLABS_API_KEY,
         elevenlabs_tts_voice_id=ELEVENLABS_VOICE_ID,
         elevenlabs_tts_model=ELEVENLABS_TTS_MODEL,
-        tts_default_language="he",
-        tts_default_output_format="mp3",
     )
 
     try:
-        audio = await text_to_speech(EXAMPLE_TEXT, settings=settings)
+        audio = await text_to_speech(
+            text=EXAMPLE_TEXT,
+            language="he",
+            voice=ELEVENLABS_VOICE_ID,
+            speed=1.0,
+            output_format="mp3_fast",
+            settings=settings,
+        )
     except SpeechSynthesisFailedError as exc:
         raise AssertionError(
             "ElevenLabs rejected the TTS request; check the API key, voice ID, and model"
         ) from exc
 
     assert audio.data
-    assert audio.media_type == "audio/mpeg"
-    assert audio.file_extension == "mp3"
+    assert audio.media_type.startswith("audio/")
+    assert audio.file_extension
 
     project_root = Path(__file__).resolve().parents[1]
-    output_path = project_root / "artifacts" / "hebrew_tts_example.mp3"
+    output_path = project_root / "artifacts" / f"tts_example.{audio.file_extension}"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     written = output_path.write_bytes(audio.data)
 

@@ -55,6 +55,11 @@ _ELEVENLABS_FORMATS: dict[AudioFormat, _ElevenLabsFormat] = {
         media_type="audio/mpeg",
         file_extension="mp3",
     ),
+    "mp3_fast": _ElevenLabsFormat(
+        provider_name="mp3_22050_32",
+        media_type="audio/mpeg",
+        file_extension="mp3",
+    ),
     "wav": _ElevenLabsFormat(
         provider_name="wav_44100",
         media_type="audio/wav",
