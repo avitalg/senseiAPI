@@ -24,6 +24,7 @@ docker-compose.override.yml
 .coverage.*
 htmlcov/
 coverage.xml
+artifacts/
 
 # Uploaded files (local)
 uploads/
