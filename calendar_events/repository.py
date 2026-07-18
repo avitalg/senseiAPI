@@ -9,6 +9,9 @@ from calendar_events.orm import CalendarEventRecord
 from patients.models import PatientNotFoundError
 from patients.orm import PatientRecord
 
+# TODO: refactor when we have an authorization
+FAKE_THERAPIST_ID = uuid.UUID("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+
 
 def _to_event(record: CalendarEventRecord) -> CalendarEvent:
     return CalendarEvent(
