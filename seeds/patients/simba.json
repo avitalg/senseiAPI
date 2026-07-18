@@ -1,10 +1,9 @@
 {
   "therapist_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "patient": {
-    "name": "סימבה",
-    "phone": "+972-50-1234567",
-    "email": null
-  },
+  "slug": "simba",
+  "name": "סימבה",
+  "phone": "+972-50-1234567",
+  "email": null,
   "sessions": [
     {
       "n": 1,
