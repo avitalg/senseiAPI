@@ -251,7 +251,9 @@ async def test_elevenlabs_synthesizer_maps_wav_metadata() -> None:
 
 
 @pytest.mark.anyio
-async def test_elevenlabs_synthesizer_wraps_provider_errors() -> None:
+async def test_elevenlabs_synthesizer_wraps_provider_errors_without_logging_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     text_to_speech = _FakeTextToSpeech(error=RuntimeError("401 unauthorized"))
     synthesizer = ElevenLabsSynthesizer(
         client=_FakeElevenLabsClient(text_to_speech),
@@ -266,6 +268,8 @@ async def test_elevenlabs_synthesizer_wraps_provider_errors() -> None:
             speed=1.0,
             output_format="mp3",
         )
+
+    assert HEBREW_TEXT not in caplog.text
 
 
 @pytest.mark.anyio
