@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from tts.models import MAX_SPEECH_SPEED, MIN_SPEECH_SPEED, AudioFormat
+
 MIN_AUTH_TOKEN_SECRET_BYTES = 32
 
 
@@ -38,6 +40,17 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"  # "cpu", "cuda", or "auto"
     whisper_compute_type: str = "int8"  # e.g. int8, int8_float16, float16, float32
     transcribe_language: str = "he"  # ISO-639-1; Hebrew by default
+
+    # Text-to-speech is optional and uses the existing ElevenLabs account when enabled.
+    tts_enabled: bool = False
+    tts_backend: Literal["elevenlabs"] = "elevenlabs"
+    elevenlabs_tts_model: str = "eleven_multilingual_v2"
+    elevenlabs_tts_voice_id: str | None = None
+    tts_default_language: str = "he"
+    tts_default_speed: float = 1.0
+    tts_default_output_format: AudioFormat = "mp3"
+    tts_max_text_chars: int = 5_000
+    tts_timeout_seconds: int = 30
 
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True
@@ -87,6 +100,26 @@ def validate_startup_settings(settings: Settings) -> None:
             )
         if settings.auth_token_ttl_seconds <= 0:
             raise SettingsConfigurationError("AUTH_TOKEN_TTL_SECONDS must be positive")
+
+    if settings.tts_enabled:
+        if not settings.elevenlabs_api_key or not settings.elevenlabs_api_key.strip():
+            raise SettingsConfigurationError("ELEVENLABS_API_KEY must be set when TTS_ENABLED=true")
+        if not settings.elevenlabs_tts_voice_id or not settings.elevenlabs_tts_voice_id.strip():
+            raise SettingsConfigurationError(
+                "ELEVENLABS_TTS_VOICE_ID must be set when TTS_ENABLED=true"
+            )
+        if not settings.elevenlabs_tts_model.strip():
+            raise SettingsConfigurationError("ELEVENLABS_TTS_MODEL must not be empty")
+        if not settings.tts_default_language.strip():
+            raise SettingsConfigurationError("TTS_DEFAULT_LANGUAGE must not be empty")
+        if not MIN_SPEECH_SPEED <= settings.tts_default_speed <= MAX_SPEECH_SPEED:
+            raise SettingsConfigurationError(
+                f"TTS_DEFAULT_SPEED must be between {MIN_SPEECH_SPEED} and {MAX_SPEECH_SPEED}"
+            )
+        if settings.tts_max_text_chars <= 0:
+            raise SettingsConfigurationError("TTS_MAX_TEXT_CHARS must be positive")
+        if settings.tts_timeout_seconds <= 0:
+            raise SettingsConfigurationError("TTS_TIMEOUT_SECONDS must be positive")
 
 
 @lru_cache

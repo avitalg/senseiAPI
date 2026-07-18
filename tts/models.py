@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 AudioFormat = Literal["mp3", "wav"]
+MIN_SPEECH_SPEED = 0.7
+MAX_SPEECH_SPEED = 1.2
+SUPPORTED_AUDIO_FORMATS: tuple[AudioFormat, ...] = ("mp3", "wav")
 
 
 @dataclass(frozen=True)

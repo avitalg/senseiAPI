@@ -7,12 +7,14 @@ from tts.errors import (
     TTSConfigurationError,
     UnsupportedAudioFormatError,
 )
-from tts.models import AudioFormat, SynthesizedAudio
+from tts.models import (
+    MAX_SPEECH_SPEED,
+    MIN_SPEECH_SPEED,
+    SUPPORTED_AUDIO_FORMATS,
+    AudioFormat,
+    SynthesizedAudio,
+)
 from tts.synthesizer import Synthesizer
-
-MIN_SPEECH_SPEED = 0.7
-MAX_SPEECH_SPEED = 1.2
-SUPPORTED_AUDIO_FORMATS: tuple[AudioFormat, ...] = ("mp3", "wav")
 
 
 class TTSService:
