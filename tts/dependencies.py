@@ -13,8 +13,8 @@ def _build_elevenlabs_client(*, api_key: str, timeout_seconds: int) -> ElevenLab
     return AsyncElevenLabs(api_key=api_key, timeout=timeout_seconds)
 
 
-def get_synthesizer(settings: Settings = Depends(get_settings)) -> Synthesizer:
-    """Build the configured provider adapter for a TTS request."""
+def build_synthesizer(settings: Settings) -> Synthesizer:
+    """Build the configured provider adapter for internal application code."""
     if not settings.tts_enabled:
         raise TTSConfigurationError("TTS is disabled")
     if settings.tts_backend != "elevenlabs":
@@ -36,11 +36,17 @@ def get_synthesizer(settings: Settings = Depends(get_settings)) -> Synthesizer:
     )
 
 
-def get_tts_service(
-    synthesizer: Synthesizer = Depends(get_synthesizer),
-    settings: Settings = Depends(get_settings),
+def get_synthesizer(settings: Settings = Depends(get_settings)) -> Synthesizer:
+    """Expose the configured provider adapter through FastAPI dependency injection."""
+    return build_synthesizer(settings)
+
+
+def build_tts_service(
+    settings: Settings,
+    *,
+    synthesizer: Synthesizer | None = None,
 ) -> TTSService:
-    """Build a reusable TTS service with application-level defaults."""
+    """Build a reusable TTS service for internal application code."""
     if not settings.tts_enabled:
         raise TTSConfigurationError("TTS is disabled")
 
@@ -48,11 +54,20 @@ def get_tts_service(
     if not voice_id or not voice_id.strip():
         raise TTSConfigurationError("ELEVENLABS_TTS_VOICE_ID is required for TTS")
 
+    resolved_synthesizer = synthesizer or build_synthesizer(settings)
     return TTSService(
-        synthesizer=synthesizer,
+        synthesizer=resolved_synthesizer,
         default_voice=voice_id,
         default_language=settings.tts_default_language,
         default_speed=settings.tts_default_speed,
         default_output_format=settings.tts_default_output_format,
         max_text_chars=settings.tts_max_text_chars,
     )
+
+
+def get_tts_service(
+    synthesizer: Synthesizer = Depends(get_synthesizer),
+    settings: Settings = Depends(get_settings),
+) -> TTSService:
+    """Expose the configured TTS service through FastAPI dependency injection."""
+    return build_tts_service(settings, synthesizer=synthesizer)
