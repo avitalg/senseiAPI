@@ -190,7 +190,7 @@ def test_get_ready_report_returns_200_with_sections() -> None:
     ready = [
         ReadyMeetingSummary(
             meeting_id=uuid.uuid4(),
-            start_at=datetime.now(UTC),
+            start_at=NOW - timedelta(hours=1),
             text="סיכום ארוך לפגישה האחרונה " * 5,
         )
     ]
