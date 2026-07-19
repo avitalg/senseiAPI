@@ -12,6 +12,7 @@ from tests.database_helpers import get_database_url
 
 PATIENT_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 OTHER_PATIENT_ID = uuid.UUID("55555555-5555-5555-5555-555555555555")
+USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 CREATED_AT = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
 OTHER_CREATED_AT = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
 
@@ -21,6 +22,7 @@ class _FakePatientService:
         self._patient_ids = {PATIENT_ID, OTHER_PATIENT_ID}
         self._patients = [
             Patient(
+                user_id=USER_ID,
                 id=PATIENT_ID,
                 name="Jane Doe",
                 phone="050-1234567",
@@ -28,6 +30,7 @@ class _FakePatientService:
                 created_at=CREATED_AT,
             ),
             Patient(
+                user_id=USER_ID,
                 id=OTHER_PATIENT_ID,
                 name="John Smith",
                 phone="052-9876543",
@@ -39,11 +42,13 @@ class _FakePatientService:
     async def add_patient(
         self,
         *,
+        user_id: uuid.UUID,
         name: str,
         phone: str,
         email: str | None = None,
     ) -> Patient:
         return Patient(
+            user_id=user_id,
             id=PATIENT_ID,
             name=name,
             phone=phone,
@@ -51,10 +56,15 @@ class _FakePatientService:
             created_at=CREATED_AT,
         )
 
-    async def list_patients(self) -> list[Patient]:
+    async def list_patients(self, user_id: uuid.UUID) -> list[Patient]:
         return list(self._patients)
 
-    async def update_patient(self, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
+    async def update_patient(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> Patient:
         for index, patient in enumerate(self._patients):
             if patient.id != patient_id:
                 continue
@@ -62,6 +72,7 @@ class _FakePatientService:
             email_value = updates.get("email", patient.email)
             email = None if email_value is None else str(email_value)
             updated = Patient(
+                user_id=patient.user_id,
                 id=patient.id,
                 name=patient.name,
                 phone=phone,
@@ -72,7 +83,7 @@ class _FakePatientService:
             return updated
         raise PatientNotFoundError(patient_id)
 
-    async def delete_patient(self, patient_id: uuid.UUID) -> None:
+    async def delete_patient(self, user_id: uuid.UUID, patient_id: uuid.UUID) -> None:
         if patient_id not in self._patient_ids:
             raise PatientNotFoundError(patient_id)
         self._patient_ids.remove(patient_id)

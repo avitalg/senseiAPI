@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from auth.router import TEST_USER_ID
 from calendar_events.models import CalendarEvent
 from core.config import Settings, get_settings
 from main import app
@@ -20,7 +21,7 @@ from summaries.models import ReadyMeetingSummary
 PATIENT_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
 MEETING_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
 OTHER_MEETING_ID = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
-THERAPIST_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
+USER_ID = TEST_USER_ID
 NOW = datetime(2026, 7, 17, 10, 30, tzinfo=UTC)
 
 
@@ -43,6 +44,7 @@ def _no_background_generation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
 def _stored(status: ReportStatus, **changes: object) -> StoredReport:
     now = datetime.now(UTC)
     base: dict[str, object] = {
+        "user_id": USER_ID,
         "id": uuid.uuid4(),
         "patient_id": PATIENT_ID,
         "meeting_id": MEETING_ID,
@@ -76,7 +78,7 @@ def _meeting(
         start_at=start,
         end_at=end,
         created_at=NOW,
-        therapist_id=THERAPIST_ID,
+        user_id=USER_ID,
         patient_id=patient_id,
     )
 
@@ -85,10 +87,11 @@ class _FakePatients:
     def __init__(self, *, exists: bool = True) -> None:
         self.exists = exists
 
-    async def get_patient(self, patient_id: uuid.UUID) -> Patient:
+    async def get_patient(self, user_id: uuid.UUID, patient_id: uuid.UUID) -> Patient:
         if not self.exists:
             raise PatientNotFoundError(patient_id)
         return Patient(
+            user_id=user_id,
             id=patient_id,
             name="Test",
             phone="050",
@@ -106,10 +109,18 @@ class _FakeReportReader:
         else:
             self._reports = reports
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredReport | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredReport | None:
         return self._reports.get(meeting_id)
 
-    async def list_for_patient(self, patient_id: uuid.UUID) -> list[StoredReport]:
+    async def list_for_patient(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+    ) -> list[StoredReport]:
         return [r for r in self._reports.values() if r.patient_id == patient_id]
 
 
@@ -119,6 +130,7 @@ class _FakeSummaryReader:
 
     async def list_ready_for_patient(
         self,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         *,
         limit: int = 8,
@@ -127,6 +139,7 @@ class _FakeSummaryReader:
 
     async def list_ready_before_meeting(
         self,
+        user_id: uuid.UUID,
         patient_id: uuid.UUID,
         *,
         before_start_at: datetime,
@@ -270,7 +283,7 @@ def test_post_starts_generation_for_new_report() -> None:
 
     assert res.status_code == 202
     assert res.json()["status"] == "pending"
-    svc.create_pending.assert_awaited_once_with(PATIENT_ID, MEETING_ID)
+    svc.create_pending.assert_awaited_once_with(USER_ID, PATIENT_ID, MEETING_ID)
 
 
 def test_post_returns_inflight_without_reset() -> None:
@@ -307,7 +320,7 @@ def test_next_meeting_get_delegates_to_resolved_meeting() -> None:
 
     assert res.status_code == 200
     assert res.json()["meeting_id"] == str(MEETING_ID)
-    svc.resolve_next_meeting.assert_awaited_once_with(PATIENT_ID)
+    svc.resolve_next_meeting.assert_awaited_once_with(USER_ID, PATIENT_ID)
 
 
 def test_next_meeting_post_starts_generation_for_resolved_meeting() -> None:
@@ -321,8 +334,8 @@ def test_next_meeting_post_starts_generation_for_resolved_meeting() -> None:
     res = client.post(f"/patients/{PATIENT_ID}/next-meeting-report")
 
     assert res.status_code == 202
-    svc.resolve_next_meeting.assert_awaited_once_with(PATIENT_ID)
-    svc.create_pending.assert_awaited_once_with(PATIENT_ID, MEETING_ID)
+    svc.resolve_next_meeting.assert_awaited_once_with(USER_ID, PATIENT_ID)
+    svc.create_pending.assert_awaited_once_with(USER_ID, PATIENT_ID, MEETING_ID)
 
 
 def test_next_meeting_get_without_upcoming_meeting_returns_404() -> None:

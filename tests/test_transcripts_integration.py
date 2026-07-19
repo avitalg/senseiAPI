@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from auth.router import TEST_USER_ID
 from calendar_events.orm import CalendarEventRecord
 from tests.conftest import DEFAULT_TRANSCRIPT, ClientFactory
 from tests.database_helpers import get_database_url
@@ -67,12 +68,18 @@ def test_upload_persists_transcript_for_calendar_event(make_client: ClientFactor
             engine = create_async_engine(database_url)
             sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
             async with sessionmaker() as session:
-                meeting = await session.get(CalendarEventRecord, uuid.UUID(meeting_id))
+                meeting = await session.get(
+                    CalendarEventRecord,
+                    (TEST_USER_ID, uuid.UUID(meeting_id)),
+                )
                 assert meeting is not None
                 assert meeting.patient_id == uuid.UUID(patient_id)
 
                 result = await session.execute(
-                    select(TranscriptRecord).where(TranscriptRecord.id == transcript_id)
+                    select(TranscriptRecord).where(
+                        TranscriptRecord.user_id == TEST_USER_ID,
+                        TranscriptRecord.id == transcript_id,
+                    )
                 )
                 transcript = result.scalar_one()
                 assert transcript.meeting_id == uuid.UUID(meeting_id)

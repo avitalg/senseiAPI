@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from auth.router import TEST_USER_ID
 from core.config import Settings, get_settings
 from core.database import get_db_session
 from main import app
@@ -24,6 +25,7 @@ __import__("summaries.router")
 def _stored(status: SummaryStatus, **changes: object) -> StoredSummary:
     now = datetime.now(UTC)
     base: dict[str, object] = {
+        "user_id": TEST_USER_ID,
         "id": uuid.uuid4(),
         "meeting_id": MEETING_ID,
         "status": status,
@@ -41,7 +43,11 @@ class _FakeReader:
     def __init__(self, summary: StoredSummary | None) -> None:
         self._summary = summary
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredSummary | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredSummary | None:
         return self._summary
 
 
@@ -56,10 +62,15 @@ class _FakeTranscriptRepo:
     def __init__(self, *, has_transcript: bool = True) -> None:
         self.has_transcript = has_transcript
 
-    async def get_by_meeting_id(self, meeting_id: uuid.UUID) -> StoredTranscript | None:
+    async def get_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredTranscript | None:
         if not self.has_transcript:
             return None
         return StoredTranscript(
+            user_id=user_id,
             id=uuid.uuid4(),
             meeting_id=meeting_id,
             raw_text="טקסט",
@@ -158,7 +169,7 @@ def test_post_starts_summary_when_transcript_exists(monkeypatch: pytest.MonkeyPa
 
     assert res.status_code == 202
     assert res.json()["status"] == "pending"
-    svc.create_pending.assert_awaited_once_with(MEETING_ID)
+    svc.create_pending.assert_awaited_once_with(TEST_USER_ID, MEETING_ID)
 
 
 def test_post_without_transcript_returns_404(monkeypatch: pytest.MonkeyPatch) -> None:

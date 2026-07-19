@@ -14,6 +14,7 @@ class CalendarEventService:
     async def add_event(
         self,
         *,
+        user_id: uuid.UUID,
         title: str,
         start_at: datetime,
         end_at: datetime,
@@ -21,6 +22,7 @@ class CalendarEventService:
         patient_id: uuid.UUID | None = None,
     ) -> CalendarEvent:
         return await self._repository.create(
+            user_id=user_id,
             title=title,
             description=description,
             start_at=start_at,
@@ -31,32 +33,40 @@ class CalendarEventService:
     async def list_events(
         self,
         *,
+        user_id: uuid.UUID,
         from_at: datetime,
         to_at: datetime,
     ) -> list[CalendarEvent]:
         return await self._repository.list_all(
+            user_id=user_id,
             from_at=from_at,
             to_at=to_at,
         )
 
-    async def get_meeting(self, meeting_id: uuid.UUID) -> CalendarEvent:
-        return await self._repository.get_meeting(meeting_id)
+    async def get_meeting(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> CalendarEvent:
+        return await self._repository.get_meeting(user_id, meeting_id)
 
     async def update_meeting(
         self,
+        user_id: uuid.UUID,
         meeting_id: uuid.UUID,
         updates: dict[str, object],
     ) -> CalendarEvent:
-        return await self._repository.update_meeting(meeting_id, updates)
+        return await self._repository.update_meeting(user_id, meeting_id, updates)
 
-    async def delete_meeting(self, meeting_id: uuid.UUID) -> None:
-        await self._repository.delete_meeting(meeting_id)
+    async def delete_meeting(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+        await self._repository.delete_meeting(user_id, meeting_id)
 
-    async def get_event(self, event_id: uuid.UUID) -> CalendarEvent:
-        return await self.get_meeting(event_id)
+    async def get_event(self, user_id: uuid.UUID, event_id: uuid.UUID) -> CalendarEvent:
+        return await self.get_meeting(user_id, event_id)
 
-    async def update_event(self, event_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
-        return await self.update_meeting(event_id, updates)
+    async def update_event(
+        self,
+        user_id: uuid.UUID,
+        event_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> CalendarEvent:
+        return await self.update_meeting(user_id, event_id, updates)
 
-    async def delete_event(self, event_id: uuid.UUID) -> None:
-        await self.delete_meeting(event_id)
+    async def delete_event(self, user_id: uuid.UUID, event_id: uuid.UUID) -> None:
+        await self.delete_meeting(user_id, event_id)

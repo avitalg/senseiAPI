@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from auth.router import TEST_USER_ID
 from calendar_events.models import CalendarEventNotFoundError
 from main import app
 from summaries.repository import SummaryRepository
@@ -36,7 +37,7 @@ def test_upload_audio_returns_201_and_deletes_file_after_transcript(
     assert body["id"].endswith(".mp3")
     assert body["text"] == DEFAULT_TRANSCRIPT
 
-    stored = settings.upload_dir / body["id"]
+    stored = settings.upload_dir / str(TEST_USER_ID) / body["id"]
     assert not stored.exists()
 
 
@@ -121,8 +122,9 @@ def test_download_audio_returns_content(make_client: ClientFactory) -> None:
     client, settings = make_client()
     content = b"fake-audio-content"
     audio_id = "seeded-song.mp3"
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    (settings.upload_dir / audio_id).write_bytes(content)
+    user_upload_dir = settings.upload_dir / str(TEST_USER_ID)
+    user_upload_dir.mkdir(parents=True, exist_ok=True)
+    (user_upload_dir / audio_id).write_bytes(content)
     res = client.get(f"/audio/{audio_id}")
     assert res.status_code == 200
     assert res.content == content
@@ -144,11 +146,13 @@ def test_download_audio_rejects_path_traversal(make_client: ClientFactory) -> No
 def test_delete_audio_returns_204_then_404(make_client: ClientFactory) -> None:
     client, settings = make_client()
     audio_id = "seeded-song.mp3"
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    (settings.upload_dir / audio_id).write_bytes(b"abc")
+    user_upload_dir = settings.upload_dir / str(TEST_USER_ID)
+    user_upload_dir.mkdir(parents=True, exist_ok=True)
+    stored = user_upload_dir / audio_id
+    stored.write_bytes(b"abc")
 
     assert client.delete(f"/audio/{audio_id}").status_code == 204
-    assert not (settings.upload_dir / audio_id).exists()
+    assert not stored.exists()
     assert client.get(f"/audio/{audio_id}").status_code == 404
 
 
@@ -198,6 +202,7 @@ def test_upload_with_meeting_persists_via_transcript_service(
     transcript_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     patient_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
     saved = StoredTranscript(
+        user_id=TEST_USER_ID,
         id=transcript_id,
         meeting_id=meeting_id,
         raw_text=DEFAULT_TRANSCRIPT,
@@ -232,6 +237,7 @@ def test_upload_with_meeting_persists_via_transcript_service(
     await_args = mock_save.await_args
     assert await_args is not None
     kwargs = await_args.kwargs
+    assert kwargs["user_id"] == TEST_USER_ID
     assert kwargs["meeting_id"] == meeting_id
     assert kwargs["patient_id"] == patient_id
     assert kwargs["raw_text"] == DEFAULT_TRANSCRIPT
@@ -245,6 +251,7 @@ def test_upload_schedules_a_summary_and_marks_it_pending(
     polling in the gap would otherwise get a 404 for a summary that is on its way."""
     meeting_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     saved = StoredTranscript(
+        user_id=TEST_USER_ID,
         id=uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
         meeting_id=meeting_id,
         raw_text=DEFAULT_TRANSCRIPT,
@@ -271,10 +278,11 @@ def test_upload_schedules_a_summary_and_marks_it_pending(
         _clear_db_override()
 
     assert res.status_code == 201
-    mock_pending.assert_awaited_once_with(meeting_id)
+    mock_pending.assert_awaited_once_with(TEST_USER_ID, meeting_id)
     mock_generate.assert_awaited_once()
     assert mock_generate.await_args is not None
-    assert mock_generate.await_args.args[0] == meeting_id
+    assert mock_generate.await_args.args[0] == TEST_USER_ID
+    assert mock_generate.await_args.args[1] == meeting_id
 
 
 def test_upload_unknown_meeting_returns_404(

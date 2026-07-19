@@ -15,6 +15,7 @@ class PatientNotFoundError(Exception):
 
 @dataclass(frozen=True)
 class Patient:
+    user_id: uuid.UUID
     id: uuid.UUID
     name: str
     phone: str

@@ -9,6 +9,7 @@ from patients.orm import PatientRecord
 
 def _to_patient(record: PatientRecord) -> Patient:
     return Patient(
+        user_id=record.user_id,
         id=record.id,
         name=record.name,
         phone=record.phone,
@@ -26,30 +27,50 @@ class PatientRepository:
     async def create(
         self,
         *,
+        user_id: uuid.UUID,
         name: str,
         phone: str,
         email: str | None = None,
     ) -> Patient:
-        record = PatientRecord(name=name, phone=phone, email=email)
+        record = PatientRecord(user_id=user_id, name=name, phone=phone, email=email)
         self._session.add(record)
         await self._session.commit()
         await self._session.refresh(record)
         return _to_patient(record)
 
-    async def list_all(self) -> list[Patient]:
+    async def list_all(self, user_id: uuid.UUID) -> list[Patient]:
         result = await self._session.execute(
-            select(PatientRecord).order_by(PatientRecord.created_at.desc())
+            select(PatientRecord)
+            .where(PatientRecord.user_id == user_id)
+            .order_by(PatientRecord.created_at.desc())
         )
         return [_to_patient(record) for record in result.scalars().all()]
 
-    async def get(self, patient_id: uuid.UUID) -> Patient:
-        record = await self._session.get(PatientRecord, patient_id)
+    async def get(self, user_id: uuid.UUID, patient_id: uuid.UUID) -> Patient:
+        result = await self._session.execute(
+            select(PatientRecord).where(
+                PatientRecord.user_id == user_id,
+                PatientRecord.id == patient_id,
+            )
+        )
+        record = result.scalar_one_or_none()
         if record is None:
             raise PatientNotFoundError(patient_id)
         return _to_patient(record)
 
-    async def update(self, patient_id: uuid.UUID, updates: dict[str, object]) -> Patient:
-        record = await self._session.get(PatientRecord, patient_id)
+    async def update(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> Patient:
+        result = await self._session.execute(
+            select(PatientRecord).where(
+                PatientRecord.user_id == user_id,
+                PatientRecord.id == patient_id,
+            )
+        )
+        record = result.scalar_one_or_none()
         if record is None:
             raise PatientNotFoundError(patient_id)
         if "phone" in updates:
@@ -61,8 +82,14 @@ class PatientRepository:
         await self._session.refresh(record)
         return _to_patient(record)
 
-    async def delete(self, patient_id: uuid.UUID) -> None:
-        record = await self._session.get(PatientRecord, patient_id)
+    async def delete(self, user_id: uuid.UUID, patient_id: uuid.UUID) -> None:
+        result = await self._session.execute(
+            select(PatientRecord).where(
+                PatientRecord.user_id == user_id,
+                PatientRecord.id == patient_id,
+            )
+        )
+        record = result.scalar_one_or_none()
         if record is None:
             raise PatientNotFoundError(patient_id)
         await self._session.delete(record)

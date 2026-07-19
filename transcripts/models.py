@@ -23,6 +23,7 @@ class TranscriptPatientMismatchError(Exception):
 
 @dataclass(frozen=True)
 class StoredTranscript:
+    user_id: uuid.UUID
     id: uuid.UUID
     meeting_id: uuid.UUID
     raw_text: str
