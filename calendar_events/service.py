@@ -6,7 +6,7 @@ from calendar_events.repository import CalendarEventRepository
 
 
 class CalendarEventService:
-    """Business logic for calendar event management."""
+    """Business logic for scheduled therapy meetings (calendar_events rows)."""
 
     def __init__(self, repository: CalendarEventRepository) -> None:
         self._repository = repository
@@ -39,11 +39,24 @@ class CalendarEventService:
             to_at=to_at,
         )
 
+    async def get_meeting(self, meeting_id: uuid.UUID) -> CalendarEvent:
+        return await self._repository.get_meeting(meeting_id)
+
+    async def update_meeting(
+        self,
+        meeting_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> CalendarEvent:
+        return await self._repository.update_meeting(meeting_id, updates)
+
+    async def delete_meeting(self, meeting_id: uuid.UUID) -> None:
+        await self._repository.delete_meeting(meeting_id)
+
     async def get_event(self, event_id: uuid.UUID) -> CalendarEvent:
-        return await self._repository.get(event_id)
+        return await self.get_meeting(event_id)
 
     async def update_event(self, event_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
-        return await self._repository.update(event_id, updates)
+        return await self.update_meeting(event_id, updates)
 
     async def delete_event(self, event_id: uuid.UUID) -> None:
-        await self._repository.delete(event_id)
+        await self.delete_meeting(event_id)

@@ -1,9 +1,11 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from summaries.models import StoredSummary
+from calendar_events.orm import CalendarEventRecord
+from summaries.models import ReadyMeetingSummary, StoredSummary
 from summaries.orm import SummaryRecord
 
 
@@ -81,3 +83,77 @@ class SummaryRepository:
             select(SummaryRecord).where(SummaryRecord.status == "running")
         )
         return [to_summary(record) for record in result.scalars().all()]
+
+    async def list_ready_for_patient(
+        self,
+        patient_id: uuid.UUID,
+        *,
+        limit: int = 8,
+    ) -> list[ReadyMeetingSummary]:
+        """Ready session summaries for a patient, newest meetings first."""
+        stmt = (
+            select(SummaryRecord, CalendarEventRecord.start_at)
+            .join(
+                CalendarEventRecord,
+                CalendarEventRecord.id == SummaryRecord.meeting_id,
+            )
+            .where(
+                CalendarEventRecord.patient_id == patient_id,
+                SummaryRecord.status == "ready",
+                SummaryRecord.text.is_not(None),
+            )
+            .order_by(CalendarEventRecord.start_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        out: list[ReadyMeetingSummary] = []
+        for summary, start_at in result.all():
+            text = summary.text or ""
+            if not text.strip():
+                continue
+            out.append(
+                ReadyMeetingSummary(
+                    meeting_id=summary.meeting_id,
+                    start_at=start_at,
+                    text=text,
+                )
+            )
+        return out
+
+    async def list_ready_before_meeting(
+        self,
+        patient_id: uuid.UUID,
+        *,
+        before_start_at: datetime,
+        limit: int = 8,
+    ) -> list[ReadyMeetingSummary]:
+        """Ready summaries for past meetings only (before the target meeting)."""
+        stmt = (
+            select(SummaryRecord, CalendarEventRecord.start_at)
+            .join(
+                CalendarEventRecord,
+                CalendarEventRecord.id == SummaryRecord.meeting_id,
+            )
+            .where(
+                CalendarEventRecord.patient_id == patient_id,
+                CalendarEventRecord.start_at < before_start_at,
+                SummaryRecord.status == "ready",
+                SummaryRecord.text.is_not(None),
+            )
+            .order_by(CalendarEventRecord.start_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        out: list[ReadyMeetingSummary] = []
+        for summary, start_at in result.all():
+            text = summary.text or ""
+            if not text.strip():
+                continue
+            out.append(
+                ReadyMeetingSummary(
+                    meeting_id=summary.meeting_id,
+                    start_at=start_at,
+                    text=text,
+                )
+            )
+        return out

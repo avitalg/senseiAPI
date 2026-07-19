@@ -81,6 +81,26 @@ async def test_summarize_wraps_ollama_errors() -> None:
 
 
 @pytest.mark.anyio
+async def test_summarize_normalizes_json_to_markdown() -> None:
+    payload = """\
+{
+  "main_topics": "חרדה",
+  "therapist_interventions": "שיקוף",
+  "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",
+  "follow_up": ["שינה"]
+}
+"""
+    client = _FakeOllamaClient(content=payload)
+    summarizer = OllamaSummarizer(client=client, model="qwen2.5:7b-instruct", num_ctx=32768)
+
+    summary = await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+    assert "## נושאים מרכזיים" in summary.text
+    assert "## המשך ומעקב" in summary.text
+    assert "- שינה" in summary.text
+
+
+@pytest.mark.anyio
 async def test_summarize_rejects_an_empty_response() -> None:
     """An empty summary is a failure, not a session with nothing in it."""
     client = _FakeOllamaClient(content="   ")

@@ -38,3 +38,12 @@ class StoredSummary:
     error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class ReadyMeetingSummary:
+    """A ready per-meeting summary joined with its calendar event."""
+
+    meeting_id: uuid.UUID
+    start_at: datetime
+    text: str

@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -53,19 +54,104 @@ SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 OptionalSessionDep = Annotated[AsyncSession | None, Depends(get_optional_db_session)]
 
 
+async def _migrate_next_meeting_reports(conn: AsyncConnection) -> None:
+    """Add meeting_id to legacy next_meeting_reports (pre meeting-bound schema)."""
+    table_exists = await conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'next_meeting_reports'"
+        )
+    )
+    if table_exists.scalar_one_or_none() is None:
+        return
+
+    cols = set(
+        (
+            await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'next_meeting_reports'"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if "meeting_id" in cols:
+        return
+
+    await conn.execute(text("DELETE FROM next_meeting_reports"))
+    await conn.execute(
+        text(
+            "ALTER TABLE next_meeting_reports "
+            "ADD COLUMN IF NOT EXISTS meeting_id UUID "
+            "REFERENCES calendar_events(id) ON DELETE CASCADE"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE next_meeting_reports "
+            "DROP CONSTRAINT IF EXISTS next_meeting_reports_patient_id_key"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE next_meeting_reports "
+            "DROP CONSTRAINT IF EXISTS next_meeting_reports_meeting_id_key"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_next_meeting_reports_meeting_id "
+            "ON next_meeting_reports(meeting_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_next_meeting_reports_patient_id "
+            "ON next_meeting_reports(patient_id)"
+        )
+    )
+    await conn.execute(
+        text("ALTER TABLE next_meeting_reports ALTER COLUMN meeting_id SET NOT NULL"),
+    )
+
+
 async def init_database(settings: Settings) -> None:
-    """Create tables for all imported ORM models."""
+    """Create tables for all imported ORM models.
+
+    ``create_all`` does not alter existing tables. If a stale ``users`` stub is
+    missing auth columns (pre-security schema), recreate that table so
+    register/token do not fail with 502.
+    """
     if not settings.database_url:
         return
 
     import auth.orm  # noqa: F401
     import calendar_events.orm  # noqa: F401
     import patients.orm  # noqa: F401
+    import reports.orm  # noqa: F401
     import summaries.orm  # noqa: F401
     import transcripts.orm  # noqa: F401
 
     engine = get_engine(settings.database_url)
     async with engine.begin() as conn:
+        users_cols = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'users'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if users_cols and "password_hash" not in set(users_cols):
+            await conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+
+        await _migrate_next_meeting_reports(conn)
         await conn.run_sync(Base.metadata.create_all)
 
 

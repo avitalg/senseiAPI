@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
+from summaries.format import normalize_summary_output
 from summaries.models import Summary, SummaryFailedError
 from summaries.prompt import THERAPIST_SUMMARY_SYSTEM_PROMPT
 
@@ -50,7 +51,7 @@ class OllamaSummarizer(Summarizer):
             logger.error("ollama summarization failed", exc_info=exc)
             raise SummaryFailedError(f"summarization failed: {exc}") from exc
 
-        summary_text = response["message"]["content"].strip()
+        summary_text = normalize_summary_output(response["message"]["content"])
         if not summary_text:
             raise SummaryFailedError("the model returned an empty summary")
         return Summary(text=summary_text, model=self._model)

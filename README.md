@@ -25,6 +25,19 @@ cp .env.example .env
 > `requirements-dev.txt` includes everything in `requirements.txt` plus the test/lint tools.
 > For a production install, use `pip install -r requirements.txt`.
 
+## Terminology
+
+A **meeting** is a scheduled therapy session. It is stored as a row in the
+`calendar_events` table. Throughout the API:
+
+- `meeting_id` on summaries, transcripts, prep reports, and audio upload =
+  `calendar_events.id`
+- `/calendar/{meeting_id}` manages the schedule; `/meetings/{meeting_id}/summary`
+  and related routes attach session artifacts to the same id
+
+The `/calendar` URL prefix and `calendar_events` table name are legacy; new code
+should prefer **meeting** in parameter and field names.
+
 ## Transcription
 
 Speech-to-text runs through one of two backends, chosen by `TRANSCRIBER_BACKEND`:
@@ -91,13 +104,28 @@ The API is then available at:
 
 ## Quality checks
 
-Run all of these before opening a PR or marking a task done — they must all pass:
+Use the project virtualenv (conda/base Python does not have API dependencies).
+Either activate it first, or use the Makefile (recommended):
+
+```bash
+make                    # default — full verification (see check-all below)
+make check-all          # lint + format + mypy + all tests (unit + integration; needs Docker)
+make check              # lint + format + mypy + unit tests only (faster, no Docker)
+make test               # unit tests only
+make test-all           # unit + integration tests only (needs Docker)
+```
+
+**Before opening a PR or pushing**, run `make` (or `make check-all`) from `senseiapi/`.
+That is the project's default testing target: ruff lint, format check, mypy, and the
+full pytest suite including integration tests.
+
+Or manually after `source .venv/bin/activate` (and `conda deactivate` if you use Anaconda):
 
 ```bash
 ruff check .            # lint
 ruff format --check .   # formatting
 mypy .                  # static type checks
-pytest                  # tests
+python -m pytest -m "not integration"   # unit tests (prefer over bare `pytest`)
 ```
 
 Auto-fix what's fixable:
@@ -110,11 +138,38 @@ ruff format .
 ## Testing
 
 - Tests live in `tests/` and are named `test_*.py`.
+- Default verification: `make` from `senseiapi/` (runs lint, format check, mypy, and all tests).
 - Run the suite with `pytest` (or `pytest -q` for quiet output).
 - Endpoints are tested via `fastapi.testclient.TestClient`; assert both status code and response body.
 - Database integration tests use Testcontainers and require Docker.
 - Run `pytest -m "not integration"` to skip integration tests.
 - Cover the happy path, edge cases, and failure paths.
+
+## Database migrations
+
+Schema is created via SQLAlchemy `create_all` on startup, which does **not** alter existing tables.
+On startup, [`core/database.py`](core/database.py) also auto-migrates a legacy
+`next_meeting_reports` table (adds `meeting_id` when missing). If you need to run
+it manually (e.g. before upgrading the API), use:
+
+```sql
+-- Drop legacy rows that cannot be mapped to a meeting (optional in dev)
+DELETE FROM next_meeting_reports;
+
+ALTER TABLE next_meeting_reports
+  ADD COLUMN IF NOT EXISTS meeting_id UUID REFERENCES calendar_events(id) ON DELETE CASCADE;
+
+ALTER TABLE next_meeting_reports DROP CONSTRAINT IF EXISTS next_meeting_reports_patient_id_key;
+ALTER TABLE next_meeting_reports DROP CONSTRAINT IF EXISTS next_meeting_reports_meeting_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS ix_next_meeting_reports_meeting_id
+  ON next_meeting_reports(meeting_id);
+CREATE INDEX IF NOT EXISTS ix_next_meeting_reports_patient_id
+  ON next_meeting_reports(patient_id);
+
+ALTER TABLE next_meeting_reports ALTER COLUMN meeting_id SET NOT NULL;
+```
+
+Fresh environments get the correct schema automatically from [`reports/orm.py`](reports/orm.py).
 
 ## Project structure
 

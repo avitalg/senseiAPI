@@ -1,3 +1,4 @@
+import importlib
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -8,13 +9,14 @@ import pytest
 from calendar_events.models import CalendarEventNotFoundError
 from main import app
 from summaries.repository import SummaryRepository
-from summaries.service import SummaryService
 from tests.conftest import DEFAULT_TRANSCRIPT, ClientFactory
 from transcripts.models import (
     StoredTranscript,
     TranscriptAlreadyExistsError,
 )
 from transcripts.service import TranscriptService
+
+_audio_router = importlib.import_module("audio.router")
 
 
 def test_upload_audio_returns_201_and_deletes_file_after_transcript(
@@ -206,7 +208,7 @@ def test_upload_with_meeting_persists_via_transcript_service(
     mock_save = AsyncMock(return_value=saved)
     monkeypatch.setattr(TranscriptService, "save_for_upload", mock_save)
     monkeypatch.setattr(SummaryRepository, "create_pending", AsyncMock())
-    monkeypatch.setattr(SummaryService, "generate", AsyncMock())
+    monkeypatch.setattr(_audio_router, "run_summary_generation", AsyncMock())
 
     _override_db_session()
     try:
@@ -255,7 +257,7 @@ def test_upload_schedules_a_summary_and_marks_it_pending(
     mock_pending = AsyncMock()
     monkeypatch.setattr(SummaryRepository, "create_pending", mock_pending)
     mock_generate = AsyncMock()
-    monkeypatch.setattr(SummaryService, "generate", mock_generate)
+    monkeypatch.setattr(_audio_router, "run_summary_generation", mock_generate)
 
     _override_db_session()
     try:
@@ -270,7 +272,9 @@ def test_upload_schedules_a_summary_and_marks_it_pending(
 
     assert res.status_code == 201
     mock_pending.assert_awaited_once_with(meeting_id)
-    mock_generate.assert_awaited_once_with(meeting_id)
+    mock_generate.assert_awaited_once()
+    assert mock_generate.await_args is not None
+    assert mock_generate.await_args.args[0] == meeting_id
 
 
 def test_upload_unknown_meeting_returns_404(

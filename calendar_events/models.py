@@ -4,11 +4,16 @@ from datetime import datetime
 
 
 class CalendarEventNotFoundError(Exception):
-    """Raised when a requested calendar event does not exist."""
+    """Raised when a requested therapy meeting does not exist."""
 
-    def __init__(self, event_id: uuid.UUID) -> None:
-        super().__init__(f"calendar event {event_id!r} not found")
-        self.event_id = event_id
+    def __init__(self, meeting_id: uuid.UUID) -> None:
+        super().__init__(f"meeting {meeting_id!r} not found")
+        self.meeting_id = meeting_id
+
+    @property
+    def event_id(self) -> uuid.UUID:
+        """Deprecated alias — same as meeting_id (calendar_events.id)."""
+        return self.meeting_id
 
 
 @dataclass(frozen=True)

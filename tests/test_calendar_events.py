@@ -90,15 +90,19 @@ class _FakeCalendarEventService:
     ) -> list[CalendarEvent]:
         return [event for event in self._events if from_at <= event.start_at < to_at]
 
-    async def get_event(self, event_id: uuid.UUID) -> CalendarEvent:
+    async def get_meeting(self, meeting_id: uuid.UUID) -> CalendarEvent:
         for event in self._events:
-            if event.id == event_id:
+            if event.id == meeting_id:
                 return event
-        raise CalendarEventNotFoundError(event_id)
+        raise CalendarEventNotFoundError(meeting_id)
 
-    async def update_event(self, event_id: uuid.UUID, updates: dict[str, object]) -> CalendarEvent:
+    async def update_meeting(
+        self,
+        meeting_id: uuid.UUID,
+        updates: dict[str, object],
+    ) -> CalendarEvent:
         for index, event in enumerate(self._events):
-            if event.id != event_id:
+            if event.id != meeting_id:
                 continue
             start_at = event.start_at
             start_at_value = updates.get("start_at")
@@ -127,12 +131,12 @@ class _FakeCalendarEventService:
             )
             self._events[index] = updated
             return updated
-        raise CalendarEventNotFoundError(event_id)
+        raise CalendarEventNotFoundError(meeting_id)
 
-    async def delete_event(self, event_id: uuid.UUID) -> None:
-        if event_id not in self._event_ids:
-            raise CalendarEventNotFoundError(event_id)
-        self._event_ids.remove(event_id)
+    async def delete_meeting(self, meeting_id: uuid.UUID) -> None:
+        if meeting_id not in self._event_ids:
+            raise CalendarEventNotFoundError(meeting_id)
+        self._event_ids.remove(meeting_id)
 
 
 @pytest.fixture
