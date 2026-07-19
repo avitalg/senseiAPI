@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     elevenlabs_tts_voice_id: str | None = None
     tts_default_language: str = "he"
     tts_default_speed: float = 1.0
-    tts_default_output_format: AudioFormat = "mp3"
+    tts_default_output_format: AudioFormat = "mp3_fast"
     tts_max_text_chars: int = 5_000
     tts_timeout_seconds: int = 30
 

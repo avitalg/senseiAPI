@@ -71,7 +71,7 @@ async def test_tts_service_uses_hebrew_defaults_and_trims_text() -> None:
             "language": "he",
             "voice": "hebrew-voice",
             "speed": 1.0,
-            "output_format": "mp3",
+            "output_format": "mp3_fast",
         }
     ]
 

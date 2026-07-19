@@ -27,7 +27,7 @@ class TTSService:
         default_voice: str,
         default_language: str = "he",
         default_speed: float = 1.0,
-        default_output_format: AudioFormat = "mp3",
+        default_output_format: AudioFormat = "mp3_fast",
         max_text_chars: int = 5_000,
     ) -> None:
         normalized_voice = default_voice.strip()
