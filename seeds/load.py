@@ -12,19 +12,24 @@ Run:
 
 import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-from core.config import Settings
-from core.database import get_sessionmaker, init_database
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importing the ORM modules registers their tables on Base.metadata for init_database.
 from auth.orm import UserRecord  # noqa: F401
 from calendar_events.orm import CalendarEventRecord
+from core.config import Settings
+from core.database import get_sessionmaker, init_database
 from patients.orm import PatientRecord
 from summaries.orm import SummaryRecord
 from transcripts.orm import TranscriptRecord
+
+logger = logging.getLogger(__name__)
 
 PATIENTS_DIR = Path(__file__).with_name("patients")
 
@@ -36,14 +41,14 @@ def _sid(*parts: str) -> uuid.UUID:
     return uuid.uuid5(SEED_NAMESPACE, ":".join(parts))
 
 
-def _load_patient_files() -> list[dict]:
+def _load_patient_files() -> list[dict[str, Any]]:
     files = sorted(PATIENTS_DIR.glob("*.json"))
     if not files:
         raise SystemExit(f"No patient seed files found in {PATIENTS_DIR}")
     return [json.loads(f.read_text(encoding="utf-8")) for f in files]
 
 
-async def _seed_patient(session, data: dict) -> int:
+async def _seed_patient(session: AsyncSession, data: dict[str, Any]) -> int:
     slug = data["slug"]
     user_id = uuid.UUID(data["user_id"])
     sessions = data["sessions"]
@@ -107,24 +112,38 @@ async def _seed_patient(session, data: dict) -> int:
     return len(sessions)
 
 
-async def load() -> None:
-    patients = _load_patient_files()
+async def seed_database(settings: Settings) -> int:
+    """Idempotently upsert all seed patients and their sessions.
 
-    settings = Settings()
+    Assumes the schema already exists (call after ``init_database``). Row ids are
+    deterministic, so re-running merges the same rows instead of duplicating them —
+    safe to invoke on every startup/deployment. Returns the number of patients seeded.
+    """
     if not settings.database_url:
         raise SystemExit("DATABASE_URL is not set — cannot seed.")
 
-    await init_database(settings)
+    patients = _load_patient_files()
     sessionmaker = get_sessionmaker(settings.database_url)
 
     async with sessionmaker() as session:
         for data in patients:
             count = await _seed_patient(session, data)
-            print(f"Seeded {data['name']} ({data['slug']}) with {count} sessions.")
+            logger.info("Seeded %s (%s) with %d sessions.", data["name"], data["slug"], count)
         await session.commit()
 
-    print(f"Done — {len(patients)} patients seeded.")
+    logger.info("Done — %d patients seeded.", len(patients))
+    return len(patients)
+
+
+async def load() -> None:
+    """CLI entry point: create the schema, then seed."""
+    settings = Settings()
+    if not settings.database_url:
+        raise SystemExit("DATABASE_URL is not set — cannot seed.")
+    await init_database(settings)
+    await seed_database(settings)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     asyncio.run(load())

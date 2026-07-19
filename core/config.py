@@ -78,6 +78,9 @@ class Settings(BaseSettings):
         "audio/x-flac",
         "audio/webm",
     )
+    # Seed demo patients/sessions on startup. Idempotent (deterministic ids), so it is
+    # safe to leave on: the first deployment populates the DB, later starts are no-ops.
+    seed_on_startup: bool = False
     enable_security: bool = False
     auth_token_secret_key: str | None = None
     auth_token_ttl_seconds: int = 60 * 60 * 24 * 30
