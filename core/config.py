@@ -52,6 +52,25 @@ class Settings(BaseSettings):
     tts_max_text_chars: int = 5_000
     tts_timeout_seconds: int = 30
 
+    # Chat assistant ("שאל את סנסיי"), backed by the hosted OpenAI API. Unlike summaries
+    # (kept local), the assistant answers free-form therapist questions and uses OpenAI.
+    assistant_enabled: bool = True
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o"
+    # Base URL the assistant's tools call back into for context (self-host).
+    assistant_self_base_url: str = "http://localhost:8000"
+    # When true, the assistant's http_get tool may GET ANY endpoint on this API (still
+    # GET-only, still same-host) — including PHI. Default false = PHI-safe context only.
+    assistant_allow_all_gets: bool = False
+    # Max tokens the model may generate per answer (cost/verbosity cap).
+    assistant_max_output_tokens: int = 2000
+    # Max characters for a single user question (~500 tokens).
+    assistant_max_question_chars: int = 2000
+    # Ceiling on the whole prompt sent to the model (system + history + tool results +
+    # question). When exceeded, the oldest history is dropped so recent context + the
+    # system prompt always survive.
+    assistant_max_total_input_tokens: int = 50_000
+
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True
     ollama_host: str = "http://localhost:11434"
