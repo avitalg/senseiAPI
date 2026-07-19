@@ -45,13 +45,14 @@ def _load_patient_files() -> list[dict]:
 
 async def _seed_patient(session, data: dict) -> int:
     slug = data["slug"]
-    therapist_id = uuid.UUID(data["therapist_id"])
+    user_id = uuid.UUID(data["user_id"])
     sessions = data["sessions"]
     patient_id = _sid("patient", slug)
     first_start = datetime.fromisoformat(sessions[0]["start_at"])
 
     await session.merge(
         PatientRecord(
+            user_id=user_id,
             id=patient_id,
             name=data["name"],
             phone=data["phone"],
@@ -68,18 +69,19 @@ async def _seed_patient(session, data: dict) -> int:
 
         await session.merge(
             CalendarEventRecord(
+                user_id=user_id,
                 id=meeting_id,
                 title=s["title"],
                 description=None,
                 start_at=start_at,
                 end_at=end_at,
                 created_at=start_at,
-                therapist_id=therapist_id,
                 patient_id=patient_id,
             )
         )
         await session.merge(
             TranscriptRecord(
+                user_id=user_id,
                 id=_sid("transcript", slug, n),
                 meeting_id=meeting_id,
                 raw_text=s["transcript"],
@@ -90,6 +92,7 @@ async def _seed_patient(session, data: dict) -> int:
         )
         await session.merge(
             SummaryRecord(
+                user_id=user_id,
                 id=_sid("summary", slug, n),
                 meeting_id=meeting_id,
                 status="ready",
