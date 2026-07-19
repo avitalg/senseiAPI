@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from reports.models import StoredReport
+
 INTRO_HEADING = "## סקירה מהירה"
 CHANGES_HEADING = "## שינויים ומגמות"
 OPEN_HEADING = "## נושאים פתוחים לפגישה הבאה"
@@ -155,3 +157,21 @@ def parse_report_output(text: str) -> tuple[str, list[str], list[str]]:
     if parsed is not None:
         return parsed
     return parse_report_markdown(text)
+
+
+def report_to_speech_text(report: StoredReport) -> str:
+    parts: list[str] = []
+
+    intro = (report.intro or "").strip()
+    if intro:
+        parts.append(intro)
+
+    if report.changes:
+        label = CHANGES_HEADING.removeprefix("## ")
+        parts.append(f"{label}: " + "; ".join(report.changes))
+
+    if report.open_topics:
+        label = OPEN_HEADING.removeprefix("## ")
+        parts.append(f"{label}: " + "; ".join(report.open_topics))
+
+    return "\n".join(parts)

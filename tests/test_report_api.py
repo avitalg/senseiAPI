@@ -17,6 +17,7 @@ from reports.dependencies import get_report_reader, get_report_service
 from reports.models import ReportStatus, StoredReport
 from summaries.dependencies import get_summary_reader
 from summaries.models import ReadyMeetingSummary
+from tts.models import SynthesizedAudio
 
 PATIENT_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
 MEETING_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
@@ -169,6 +170,38 @@ class _FakeReportService:
         self.list_for_patient = AsyncMock(
             return_value=[report] if report else [],
         )
+
+
+class _FakeTTSService:
+    def __init__(
+        self,
+        *,
+        audio: SynthesizedAudio | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._audio = audio
+        self._error = error
+
+    async def synthesize(self, *, text: str) -> SynthesizedAudio:
+        if self._error is not None:
+            raise self._error
+        assert self._audio is not None
+        return self._audio
+
+
+def _patch_tts(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    service: _FakeTTSService | None = None,
+    config_error: Exception | None = None,
+) -> None:
+    def fake_build_tts_service(settings: Settings) -> _FakeTTSService:
+        if config_error is not None:
+            raise config_error
+        assert service is not None
+        return service
+
+    monkeypatch.setattr(sys.modules["reports.router"], "build_tts_service", fake_build_tts_service)
 
 
 def teardown_function() -> None:
@@ -360,6 +393,129 @@ def test_meeting_patient_mismatch_returns_404() -> None:
     client = _client(report=None, service=svc)
 
     res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
+
+    assert res.status_code == 404
+
+
+def test_get_meeting_report_speech_returns_audio(monkeypatch: pytest.MonkeyPatch) -> None:
+    report = _stored("ready", intro="סקירה", changes=["א"], open_topics=["ב"])
+    audio = SynthesizedAudio(data=b"fake-audio-bytes", media_type="audio/mpeg", file_extension="mp3")
+    _patch_tts(monkeypatch, service=_FakeTTSService(audio=audio))
+    client = _client(report=report)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 200
+    assert res.content == b"fake-audio-bytes"
+    assert res.headers["content-type"] == "audio/mpeg"
+
+
+def test_get_meeting_report_speech_pending_returns_409() -> None:
+    client = _client(report=_stored("pending"))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 409
+
+
+def test_get_meeting_report_speech_running_returns_409() -> None:
+    client = _client(report=_stored("running"))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 409
+
+
+def test_get_meeting_report_speech_failed_returns_409() -> None:
+    client = _client(report=_stored("failed", error="אין סיכומי פגישות מוכנים"))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 409
+    assert res.json()["detail"] == "אין סיכומי פגישות מוכנים"
+
+
+def test_get_meeting_report_speech_tts_disabled_returns_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tts.errors import TTSConfigurationError
+
+    _patch_tts(monkeypatch, config_error=TTSConfigurationError("TTS is disabled"))
+    client = _client(report=_stored("ready", intro="סקירה"))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 503
+
+
+def test_get_meeting_report_speech_empty_text_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tts.errors import EmptyTextError
+
+    fake = _FakeTTSService(error=EmptyTextError("text must not be empty"))
+    _patch_tts(monkeypatch, service=fake)
+    client = _client(report=_stored("ready", intro=None, changes=[], open_topics=[]))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 422
+
+
+def test_get_meeting_report_speech_synthesis_failure_returns_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tts.errors import SpeechSynthesisFailedError
+
+    fake = _FakeTTSService(error=SpeechSynthesisFailedError("boom"))
+    _patch_tts(monkeypatch, service=fake)
+    client = _client(report=_stored("ready", intro="סקירה"))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 502
+
+
+def test_get_meeting_report_speech_missing_report_returns_404() -> None:
+    client = _client(report=None)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 404
+
+
+def test_meeting_report_speech_meeting_not_found_returns_404() -> None:
+    from calendar_events.models import CalendarEventNotFoundError
+
+    svc = _FakeReportService(None)
+    svc.verify_meeting_for_patient = AsyncMock(
+        side_effect=CalendarEventNotFoundError(MEETING_ID),
+    )
+    client = _client(report=None, service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 404
+
+
+def test_meeting_report_speech_patient_mismatch_returns_404() -> None:
+    from reports.models import MeetingPatientMismatchError
+
+    svc = _FakeReportService(None)
+    svc.verify_meeting_for_patient = AsyncMock(
+        side_effect=MeetingPatientMismatchError(PATIENT_ID, MEETING_ID),
+    )
+    client = _client(report=None, service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 404
+
+
+def test_get_meeting_report_speech_unknown_patient_returns_404() -> None:
+    client = _client(patient_exists=False)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
 
     assert res.status_code == 404
 
