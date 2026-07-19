@@ -13,7 +13,7 @@ from main import app
 from tests.conftest import ClientFactory
 from tests.database_helpers import get_database_url
 
-THERAPIST_ID = FAKE_THERAPIST_ID
+USER_ID = FAKE_THERAPIST_ID
 EVENT_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 OTHER_EVENT_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 OTHER_EVENT_ID2 = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
