@@ -27,6 +27,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-m 'not manual'"
 markers = [
     "integration: tests that require Docker or local services",
+    "manual: tests that call paid external services and must be selected explicitly",
 ]

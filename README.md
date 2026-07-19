@@ -53,6 +53,12 @@ so switching backends never changes the API response.
 Startup fails if `TRANSCRIBER_BACKEND=elevenlabs` and no API key is set, rather
 than silently downgrading to Whisper.
 
+## TTS example
+
+Fill the ElevenLabs placeholders in [`tests/test_tts_example.py`](tests/test_tts_example.py), then
+run `pytest -m manual --log-cli-level=INFO tests/test_tts_example.py`. The test prints the full path
+to a playable MP3 under `artifacts/`. Do not commit credentials.
+
 ## Local database
 
 Start PostgreSQL with Docker Compose:
