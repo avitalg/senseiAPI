@@ -7,12 +7,13 @@ from fastapi.testclient import TestClient
 
 from calendar_events.dependencies import get_calendar_event_service
 from calendar_events.models import CalendarEvent, CalendarEventNotFoundError
+from calendar_events.repository import FAKE_THERAPIST_ID
 from calendar_events.router import list_date_range_to_utc, resolve_list_date_range
 from main import app
 from tests.conftest import ClientFactory
 from tests.database_helpers import get_database_url
 
-USER_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
+USER_ID = FAKE_THERAPIST_ID
 EVENT_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 OTHER_EVENT_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 OTHER_EVENT_ID2 = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")

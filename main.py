@@ -17,6 +17,7 @@ from core.database import close_database, init_database, ping_database
 from patients import router as patients_router
 from reports import router as reports_router
 from reports.service import sweep_interrupted_reports
+from seeds.load import seed_database
 from summaries import router as summaries_router
 from summaries.service import sweep_interrupted_summaries
 
@@ -44,6 +45,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = settings_factory()
     validate_startup_settings(settings)
     await init_database(settings)
+    if settings.seed_on_startup:
+        await seed_database(settings)
     await sweep_interrupted_summaries(settings)
     await sweep_interrupted_reports(settings)
     yield

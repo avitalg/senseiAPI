@@ -19,7 +19,9 @@ from core.database import get_sessionmaker
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+# Matches FAKE_THERAPIST_ID / the seed therapist, so security-off dev requests
+# see the seeded patients and meetings.
+TEST_USER_ID = uuid.UUID("3fa85f64-5717-4562-b3fc-2c963f66afa6")
 TEST_USER = User(
     user_id=TEST_USER_ID,
     email="testuser@example.com",
