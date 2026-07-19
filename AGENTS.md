@@ -10,6 +10,25 @@ Cursor users: the same rules live in `.cursor/rules/` and apply automatically.
   `TRANSCRIBER_BACKEND`: `elevenlabs` (default, hosted, needs `ELEVENLABS_API_KEY`) and
   `whisper` (local `faster-whisper`). Both must return the same `Transcript` shape.
   Never let tests hit the real ElevenLabs API — inject a fake client.
+- Chat assistant (`assistant/`): `POST /assistant/chat` runs a streaming tool-call loop
+  and emits a **Vercel AI-SDK "UI message stream"** (SSE) — text + tool-input/tool-output
+  parts — that the Sensei frontend consumes with `useChat`. Hosted OpenAI Python SDK
+  (`openai`); config `OPENAI_API_KEY` / `OPENAI_MODEL` (default `gpt-4o`) /
+  `ASSISTANT_ENABLED` / `ASSISTANT_SELF_BASE_URL`; returns 503 until configured. The
+  system prompt (`assistant/prompt.py`) is trauma-informed and clinician-facing (see
+  `docs/research/`). Tools (`assistant/tools.py`): `discover_api` reads the **live
+  OpenAPI** (`GET /openapi.json`) — endpoints are discovered, never hardcoded; `http_get`
+  is GET-only, same-host (SSRF/traversal guards always on). Scope set by
+  `ASSISTANT_ALLOW_ALL_GETS`: **false (default, PHI-safe)** = confined to
+  `/assistant/context/*` (`assistant/context.py`: roster / agenda / per-patient cadence /
+  per-patient **meetings** — the meeting_id + `has_summary` chain to a session summary;
+  name+schedule only, timestamps pre-formatted numeric `DD/MM/YYYY HH:MM` via `_readable`,
+  never free-text titles); **true (demo)** = any GET on this API, incl. PHI — flip to false
+  for real deployments. `assistant/prompt.py` carries **playbooks** mapping each question
+  type to its GET chain. Never let tests hit the real OpenAI API or network — inject fake
+  `AssistantClient` / fake `Fetcher`.
+  The assistant answers over the canonical demo data seeded by `seeds/` (per-patient
+  JSON with sessions + ready summaries), loaded on startup when `SEED_ON_STARTUP=true`.
 
 ## Setup
 ```bash
