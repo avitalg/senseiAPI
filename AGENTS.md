@@ -16,7 +16,7 @@ Cursor users: the same rules live in `.cursor/rules/` and apply automatically.
   (`openai`); config `OPENAI_API_KEY` / `OPENAI_MODEL` (default `gpt-4o`) /
   `ASSISTANT_ENABLED` / `ASSISTANT_SELF_BASE_URL`; returns 503 until configured.
   **Observability (`assistant/tracing.py`, off by default):** set `LANGFUSE_ENABLED=true`
-  + `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` to trace each chat as
+  + `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` to trace each chat as
   one Langfuse trace (model rounds + tool calls nested, tagged with the therapist
   `user_id` + conversation `session_id`). Behind a `Tracer` seam — `NoOpTracer` default
   imports no `langfuse`; enabled uses the `langfuse.openai` drop-in. The

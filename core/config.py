@@ -78,7 +78,8 @@ class Settings(BaseSettings):
     langfuse_enabled: bool = False
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
-    langfuse_host: str = "https://cloud.langfuse.com"
+    # Langfuse's own v4 env var name for the API host (Cloud EU/US or self-hosted).
+    langfuse_base_url: str = "https://cloud.langfuse.com"
 
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True

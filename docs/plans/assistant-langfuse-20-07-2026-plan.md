@@ -161,9 +161,20 @@ user_id/session_id; `.env.example` + docs note.
 - Final gate: `ruff format` + `ruff check` clean, `mypy` clean (123 files), **298 tests
   pass**; app imports without loading `langfuse` (disabled-path guarantee re-verified).
 
-### Follow-ups / QA notes
-- **Live QA with real keys** is the one gap: verify in Langfuse Cloud that a real
-  `/assistant/chat` produces one grouped trace with nested generations **and token
-  usage** on streamed calls. If usage is missing, add
-  `stream_options={"include_usage": True}` in `client.py` (safe — empty-`choices`
-  chunks are already skipped). Needs Langfuse Cloud keys, which I can't provision.
+### Live QA — DONE (PASS), 2026-07-20
+Ran the real stack: backend on :8010 with `LANGFUSE_ENABLED=true` + real OpenAI +
+real Langfuse Cloud keys (Postgres already up). `POST /assistant/chat` streamed a
+real Hebrew answer cleanly (`start → text-delta… → text-end → finish → [DONE]`),
+**no tracing errors in the log**. Verified via the Langfuse API (`auth_check: True`):
+- Two `assistant-chat` traces landed, tagged `['assistant']`, grouped by
+  `session_id` (`langfuse-smoke-1/2`) + `user_id` (`3fa85f64…` = TEST_USER).
+- Each has a nested `GENERATION` (model `gpt-5.4-mini`) with **token usage
+  captured on the streamed call** (input 4017 / output 131 / total 4148) and cost
+  ($0.0036). **→ `stream_options` fallback NOT needed; item closed.**
+- Startup validation passed with enabled+keys.
+
+### Config correction found during QA (fixed)
+The repo `.env` uses `LANGFUSE_BASE_URL` (langfuse v4's own var) with no
+`LANGFUSE_HOST`. Renamed the setting `langfuse_host` → **`langfuse_base_url`**
+(reads `LANGFUSE_BASE_URL`) so operator config is actually honored instead of
+silently defaulting to cloud. Updated `.env.example`, `AGENTS.md`, tests.

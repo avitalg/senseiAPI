@@ -205,7 +205,7 @@ def _settings(**over: Any) -> Any:
         "langfuse_enabled": False,
         "langfuse_public_key": None,
         "langfuse_secret_key": None,
-        "langfuse_host": "https://cloud.langfuse.com",
+        "langfuse_base_url": "https://cloud.langfuse.com",
     }
     base.update(over)
     return SimpleNamespace(**base)
