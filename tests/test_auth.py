@@ -300,7 +300,7 @@ def test_auth_whoami_uses_test_user_when_security_disabled(make_client: ClientFa
 
     assert res.status_code == 200
     assert res.json() == {
-        "user_id": "00000000-0000-0000-0000-000000000001",
+        "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
         "email": "testuser@example.com",
         "full_name": "Test User",
     }

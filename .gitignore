@@ -29,8 +29,8 @@ artifacts/
 # Uploaded files (local)
 uploads/
 
-# Local Docker data
-.docker/
+# Local Docker data (Postgres volume only; keep .docker/initdb seed scripts tracked)
+.docker/postgres_data/
 
 # Packaging / build
 build/
