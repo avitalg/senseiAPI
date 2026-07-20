@@ -6,12 +6,26 @@ from assistant.schemas import (
     _MAX_MESSAGES,
     _MAX_TEXT_CHARS,
     ChatRequest,
+    session_id,
     to_openai_messages,
 )
 
 
 def _text_message(role: str, text: str) -> dict[str, object]:
     return {"role": role, "parts": [{"type": "text", "text": text}]}
+
+
+def test_session_id_returns_the_conversation_id() -> None:
+    request = ChatRequest.model_validate({"id": "conv-42", "messages": []})
+
+    assert session_id(request) == "conv-42"
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_session_id_is_none_when_absent_or_blank(value: str | None) -> None:
+    request = ChatRequest.model_validate({"id": value, "messages": []})
+
+    assert session_id(request) is None
 
 
 def test_to_openai_messages_prepends_system_prompt_and_flattens_text() -> None:

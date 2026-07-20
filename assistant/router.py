@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from assistant.dependencies import get_assistant_service
-from assistant.schemas import ChatRequest, latest_question_length
+from assistant.schemas import ChatRequest, latest_question_length, session_id
 from assistant.service import AssistantService
 from assistant.sse import UI_MESSAGE_STREAM_HEADER, UI_MESSAGE_STREAM_VERSION
+from auth.router import get_current_user
+from auth.schemas import User
 from core.config import Settings, get_settings
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -15,6 +17,7 @@ async def chat(
     request: ChatRequest,
     service: AssistantService = Depends(get_assistant_service),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Stream an assistant reply as a Vercel AI SDK UI Message Stream.
 
@@ -35,7 +38,11 @@ async def chat(
             detail="the question is too long",
         )
     return StreamingResponse(
-        service.stream_sse(request),
+        service.stream_sse(
+            request,
+            user_id=str(current_user.user_id),
+            session_id=session_id(request),
+        ),
         media_type="text/event-stream",
         headers={
             UI_MESSAGE_STREAM_HEADER: UI_MESSAGE_STREAM_VERSION,

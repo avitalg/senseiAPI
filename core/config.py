@@ -71,6 +71,15 @@ class Settings(BaseSettings):
     # system prompt always survive.
     assistant_max_total_input_tokens: int = 50_000
 
+    # Langfuse tracing for the assistant (LLM observability). Off by default so the
+    # default deployment is unchanged and the SDK is never imported at request time.
+    # When on, each /assistant/chat request is one trace (nested model generations +
+    # tool calls), tagged with the therapist and conversation. Keys come from Langfuse.
+    langfuse_enabled: bool = False
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
     summary_enabled: bool = True
     ollama_host: str = "http://localhost:11434"
@@ -110,6 +119,16 @@ class SettingsConfigurationError(RuntimeError):
 
 
 def validate_startup_settings(settings: Settings) -> None:
+    if settings.langfuse_enabled:
+        if not settings.langfuse_public_key or not settings.langfuse_public_key.strip():
+            raise SettingsConfigurationError(
+                "LANGFUSE_PUBLIC_KEY must be set when LANGFUSE_ENABLED=true"
+            )
+        if not settings.langfuse_secret_key or not settings.langfuse_secret_key.strip():
+            raise SettingsConfigurationError(
+                "LANGFUSE_SECRET_KEY must be set when LANGFUSE_ENABLED=true"
+            )
+
     if settings.enable_security:
         if not settings.auth_token_secret_key:
             raise SettingsConfigurationError(

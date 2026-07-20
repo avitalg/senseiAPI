@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from assistant import router as assistant_router
 from assistant.context import router as assistant_context_router
+from assistant.tracing import shutdown_tracing
 from audio import router as audio_router
 from auth.router import get_current_user
 from auth.router import router as auth_router
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await sweep_interrupted_summaries(settings)
     await sweep_interrupted_reports(settings)
     yield
+    shutdown_tracing()
     await close_database(settings.database_url)
 
 

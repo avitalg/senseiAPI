@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -14,11 +15,35 @@ from assistant.client import (
 from assistant.prompt import ASSISTANT_SYSTEM_PROMPT
 from assistant.schemas import ChatRequest
 from assistant.service import AssistantService
+from assistant.tracing import ChatTrace, Tracer
 
 
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+class _RecordingTrace(ChatTrace):
+    def __init__(self) -> None:
+        self.output: str | None = None
+        self.error: str | None = None
+
+    def set_output(self, text: str) -> None:
+        self.output = text
+
+    def set_error(self, message: str) -> None:
+        self.error = message
+
+
+class _RecordingTracer(Tracer):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str | None, str | None]] = []
+        self.trace = _RecordingTrace()
+
+    @contextmanager
+    def trace_chat(self, *, user_id: str | None, session_id: str | None) -> Iterator[ChatTrace]:
+        self.calls.append((user_id, session_id))
+        yield self.trace
 
 
 class _FakeAssistant(AssistantClient):
@@ -98,3 +123,30 @@ async def test_stream_sse_reports_a_mid_stream_error() -> None:
     assert '"type":"error"' in body and "overloaded" in body
     assert '"type":"finish"' not in body
     assert frames[-1] == "data: [DONE]\n\n"
+
+
+@pytest.mark.anyio
+async def test_stream_sse_traces_the_request_with_user_and_session() -> None:
+    tracer = _RecordingTracer()
+    service = AssistantService(
+        client=_FakeAssistant([TextChunk("שלום"), TextChunk(" עולם")]), tracer=tracer
+    )
+
+    [f async for f in service.stream_sse(_request("היי"), user_id="u1", session_id="s1")]
+
+    assert tracer.calls == [("u1", "s1")]
+    assert tracer.trace.output == "שלום עולם"
+    assert tracer.trace.error is None
+
+
+@pytest.mark.anyio
+async def test_stream_sse_records_a_mid_stream_error_on_the_trace() -> None:
+    tracer = _RecordingTracer()
+    service = AssistantService(
+        client=_FakeAssistant([TextChunk("חלק ")], error="overloaded"), tracer=tracer
+    )
+
+    [f async for f in service.stream_sse(_request("היי"), user_id="u1", session_id="s1")]
+
+    assert tracer.trace.error == "overloaded"
+    assert tracer.trace.output is None

@@ -14,7 +14,12 @@ Cursor users: the same rules live in `.cursor/rules/` and apply automatically.
   and emits a **Vercel AI-SDK "UI message stream"** (SSE) — text + tool-input/tool-output
   parts — that the Sensei frontend consumes with `useChat`. Hosted OpenAI Python SDK
   (`openai`); config `OPENAI_API_KEY` / `OPENAI_MODEL` (default `gpt-4o`) /
-  `ASSISTANT_ENABLED` / `ASSISTANT_SELF_BASE_URL`; returns 503 until configured. The
+  `ASSISTANT_ENABLED` / `ASSISTANT_SELF_BASE_URL`; returns 503 until configured.
+  **Observability (`assistant/tracing.py`, off by default):** set `LANGFUSE_ENABLED=true`
+  + `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` to trace each chat as
+  one Langfuse trace (model rounds + tool calls nested, tagged with the therapist
+  `user_id` + conversation `session_id`). Behind a `Tracer` seam — `NoOpTracer` default
+  imports no `langfuse`; enabled uses the `langfuse.openai` drop-in. The
   system prompt (`assistant/prompt.py`) is trauma-informed and clinician-facing (see
   `docs/research/`). Tools (`assistant/tools.py`): `discover_api` reads the **live
   OpenAPI** (`GET /openapi.json`) — endpoints are discovered, never hardcoded; `http_get`
