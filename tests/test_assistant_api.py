@@ -87,7 +87,10 @@ def test_chat_rejects_a_request_with_no_user_question() -> None:
 def test_chat_returns_503_when_the_assistant_is_not_configured() -> None:
     """With no OPENAI_API_KEY, the real dependency refuses (forced, not env-dependent)."""
     app.dependency_overrides[get_settings] = lambda: Settings(
-        openai_api_key=None, database_url=None
+        openai_api_key=None,
+        database_url=None,
+        enable_security=False,
+        auth_token_secret_key=None,
     )
     res = TestClient(app).post("/assistant/chat", json=_BODY)
 
