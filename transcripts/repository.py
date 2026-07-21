@@ -72,3 +72,22 @@ class TranscriptRepository:
         )
         record = result.scalar_one_or_none()
         return to_transcript(record) if record else None
+
+    async def delete_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> bool:
+        """Remove the transcript for a meeting. Returns True when a row was deleted."""
+        result = await self._session.execute(
+            select(TranscriptRecord).where(
+                TranscriptRecord.user_id == user_id,
+                TranscriptRecord.meeting_id == meeting_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        await self._session.delete(record)
+        await self._session.commit()
+        return True

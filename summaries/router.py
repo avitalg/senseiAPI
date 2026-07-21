@@ -88,3 +88,18 @@ async def get_meeting_summary(
         response.status_code = status.HTTP_202_ACCEPTED
 
     return SummaryResponse.from_summary(summary)
+
+
+@router.delete("/{meeting_id}/summary", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meeting_summary(
+    meeting_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    summaries: SummaryRepository = Depends(get_summary_reader),
+) -> None:
+    """Delete only the session summary (transcript stays). Prefer DELETE transcript to re-upload."""
+    deleted = await summaries.delete_by_meeting_id(current_user.user_id, meeting_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no summary for meeting {meeting_id}",
+        )

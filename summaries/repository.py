@@ -114,6 +114,19 @@ class SummaryRepository:
         record = await self._record_for(user_id, meeting_id)
         return to_summary(record) if record else None
 
+    async def delete_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> bool:
+        """Remove the summary row for a meeting. Returns True when a row was deleted."""
+        record = await self._record_for(user_id, meeting_id)
+        if record is None:
+            return False
+        await self._session.delete(record)
+        await self._session.commit()
+        return True
+
     async def list_running(self) -> list[StoredSummary]:
         result = await self._session.execute(
             select(SummaryRecord).where(SummaryRecord.status == "running")

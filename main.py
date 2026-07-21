@@ -22,6 +22,7 @@ from reports.service import sweep_interrupted_reports
 from seeds.load import seed_database
 from summaries import router as summaries_router
 from summaries.service import sweep_interrupted_summaries
+from transcripts.router import router as transcripts_router
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ app.include_router(calendar_router, dependencies=[Depends(get_current_user)])
 app.include_router(patients_router, dependencies=[Depends(get_current_user)])
 app.include_router(reports_router, dependencies=[Depends(get_current_user)])
 app.include_router(summaries_router, dependencies=[Depends(get_current_user)])
+app.include_router(transcripts_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/", response_model=RootResponse)
