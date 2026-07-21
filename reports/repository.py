@@ -157,6 +157,34 @@ class NextMeetingReportRepository:
         record = await self._record_for(user_id, meeting_id)
         return to_report(record) if record else None
 
+    async def get_fresh_by_meeting_id(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredReport | None:
+        """Read newly committed report state in a short polling transaction.
+
+        Every poll executes a new SELECT, while ``populate_existing`` makes SQLAlchemy
+        overwrite an object already cached in this session's identity map. Together this
+        exposes status changes committed by the separate report-generation session.
+        Rolling back ends the polling transaction, so the next poll starts with a fresh
+        transaction/snapshot; it also releases the pooled connection while the caller
+        sleeps between checks.
+        """
+        result = await self._session.execute(
+            select(NextMeetingReportRecord)
+            .where(
+                NextMeetingReportRecord.user_id == user_id,
+                NextMeetingReportRecord.meeting_id == meeting_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        record = result.scalar_one_or_none()
+        report = to_report(record) if record else None
+        # End this snapshot so the next poll can observe newly committed status changes.
+        await self._session.rollback()
+        return report
+
     async def list_for_patient(
         self,
         user_id: uuid.UUID,

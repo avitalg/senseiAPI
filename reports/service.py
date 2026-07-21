@@ -155,6 +155,21 @@ class NextMeetingReportService:
     async def get(self, user_id: uuid.UUID, meeting_id: uuid.UUID) -> StoredReport | None:
         return await self._reports.get_by_meeting_id(user_id, meeting_id)
 
+    async def get_fresh(
+        self,
+        user_id: uuid.UUID,
+        meeting_id: uuid.UUID,
+    ) -> StoredReport | None:
+        """Poll newly committed report state through a fresh read transaction.
+
+        The generation task writes in another session. Each call reads its latest
+        committed status and ends the polling transaction before returning, so the next
+        call uses a fresh transaction/snapshot. A waiter can alternate this method with
+        ``asyncio.sleep`` without blocking the event loop or retaining a database
+        connection for the duration of the wait.
+        """
+        return await self._reports.get_fresh_by_meeting_id(user_id, meeting_id)
+
     async def list_for_patient(
         self,
         user_id: uuid.UUID,
