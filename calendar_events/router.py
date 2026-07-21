@@ -73,8 +73,11 @@ def resolve_list_date_range(
         return from_date, to_date
     if from_date > to_date:
         raise ValueError("'from' must be on or before 'to'")
+    # Cap at one year. Keep the *end* of the window so recent meetings (patient
+    # history, upload picker) are never silently dropped when clients ask for
+    # a longer lookback.
     if to_date - from_date > YEAR:
-        to_date = from_date + YEAR
+        from_date = to_date - YEAR
     return from_date, to_date
 
 

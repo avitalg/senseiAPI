@@ -257,7 +257,7 @@ def test_list_calendar_events_rejects_invalid_time_zone(calendar_client: TestCli
         (None, None, date(2026, 6, 24), (date(2026, 6, 21), date(2026, 6, 27))),
         (date(2026, 6, 25), None, None, (date(2026, 6, 25), date(2026, 7, 1))),
         (None, date(2026, 6, 25), None, (date(2026, 6, 19), date(2026, 6, 25))),
-        (date(2026, 1, 1), date(2027, 2, 1), None, (date(2026, 1, 1), date(2027, 1, 1))),
+        (date(2026, 1, 1), date(2027, 2, 1), None, (date(2026, 2, 1), date(2027, 2, 1))),
     ],
 )
 def test_resolve_list_date_range_defaults(
