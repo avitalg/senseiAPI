@@ -17,6 +17,8 @@ from auth.router import router as auth_router
 from calendar_events import router as calendar_router
 from core.config import Settings, get_settings, validate_startup_settings
 from core.database import close_database, init_database, ping_database
+from daily_reports import router as daily_reports_router
+from daily_reports.service import sweep_interrupted_daily_reports
 from patients import router as patients_router
 from reports import router as reports_router
 from reports.service import sweep_interrupted_reports
@@ -53,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await seed_database(settings)
     await sweep_interrupted_summaries(settings)
     await sweep_interrupted_reports(settings)
+    await sweep_interrupted_daily_reports(settings)
     yield
     shutdown_tracing()
     await close_database(settings.database_url)
@@ -80,6 +83,7 @@ app.include_router(assistant_router, dependencies=[Depends(get_current_user)])
 app.include_router(assistant_context_router, dependencies=[Depends(get_current_user)])
 app.include_router(audio_router, dependencies=[Depends(get_current_user)])
 app.include_router(calendar_router, dependencies=[Depends(get_current_user)])
+app.include_router(daily_reports_router, dependencies=[Depends(get_current_user)])
 app.include_router(patients_router, dependencies=[Depends(get_current_user)])
 app.include_router(reports_router, dependencies=[Depends(get_current_user)])
 app.include_router(summaries_router, dependencies=[Depends(get_current_user)])
