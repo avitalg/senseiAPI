@@ -21,3 +21,5 @@ class Patient:
     phone: str
     email: EmailStr | None
     created_at: datetime
+    archived: bool = False
+    archived_at: datetime | None = None

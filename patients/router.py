@@ -1,7 +1,7 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from auth.router import get_current_user
@@ -40,11 +40,18 @@ async def add_patient(
 
 @router.get("", response_model=list[PatientOut])
 async def list_patients(
+    archived: bool = Query(
+        False,
+        description="When true, return archived patients; otherwise active only.",
+    ),
     current_user: User = Depends(get_current_user),
     service: PatientService = Depends(get_patient_service),
 ) -> list[PatientOut]:
     try:
-        patients = await service.list_patients(current_user.user_id)
+        patients = await service.list_patients(
+            current_user.user_id,
+            archived=archived,
+        )
     except SQLAlchemyError as exc:
         logger.error("failed to list patients", exc_info=exc)
         raise HTTPException(

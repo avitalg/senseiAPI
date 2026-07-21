@@ -15,6 +15,7 @@ OTHER_PATIENT_ID = uuid.UUID("55555555-5555-5555-5555-555555555555")
 USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 CREATED_AT = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
 OTHER_CREATED_AT = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
+ARCHIVED_AT = datetime(2026, 7, 1, 10, 0, tzinfo=UTC)
 
 
 class _FakePatientService:
@@ -56,8 +57,13 @@ class _FakePatientService:
             created_at=CREATED_AT,
         )
 
-    async def list_patients(self, user_id: uuid.UUID) -> list[Patient]:
-        return list(self._patients)
+    async def list_patients(
+        self,
+        user_id: uuid.UUID,
+        *,
+        archived: bool = False,
+    ) -> list[Patient]:
+        return [p for p in self._patients if p.archived == archived]
 
     async def update_patient(
         self,
@@ -71,6 +77,10 @@ class _FakePatientService:
             phone = str(updates["phone"]) if "phone" in updates else patient.phone
             email_value = updates.get("email", patient.email)
             email = None if email_value is None else str(email_value)
+            archived = bool(updates["archived"]) if "archived" in updates else patient.archived
+            archived_at = patient.archived_at
+            if "archived" in updates:
+                archived_at = ARCHIVED_AT if archived else None
             updated = Patient(
                 user_id=patient.user_id,
                 id=patient.id,
@@ -78,6 +88,8 @@ class _FakePatientService:
                 phone=phone,
                 email=email,
                 created_at=patient.created_at,
+                archived=archived,
+                archived_at=archived_at,
             )
             self._patients[index] = updated
             return updated
@@ -87,12 +99,14 @@ class _FakePatientService:
         if patient_id not in self._patient_ids:
             raise PatientNotFoundError(patient_id)
         self._patient_ids.remove(patient_id)
+        self._patients = [p for p in self._patients if p.id != patient_id]
 
 
 @pytest.fixture
 def patient_client(make_client: ClientFactory) -> TestClient:
     client, _ = make_client()
-    app.dependency_overrides[get_patient_service] = lambda: _FakePatientService()
+    service = _FakePatientService()
+    app.dependency_overrides[get_patient_service] = lambda: service
     return client
 
 
@@ -111,6 +125,8 @@ def test_add_patient_returns_201(patient_client: TestClient) -> None:
     assert body["phone"] == "050-1234567"
     assert body["created_at"] is not None
     assert body["email"] is None
+    assert body["archived"] is False
+    assert body["archived_at"] is None
 
 
 def test_add_patient_with_email_returns_email(patient_client: TestClient) -> None:
@@ -175,7 +191,7 @@ def test_delete_patient_rejects_invalid_id(patient_client: TestClient) -> None:
     assert res.status_code == 422
 
 
-def test_list_patients_returns_all_patients(patient_client: TestClient) -> None:
+def test_list_patients_returns_active_patients(patient_client: TestClient) -> None:
     res = patient_client.get("/patients")
     assert res.status_code == 200
     body = res.json()
@@ -183,7 +199,29 @@ def test_list_patients_returns_all_patients(patient_client: TestClient) -> None:
     assert body[0]["id"] == str(PATIENT_ID)
     assert body[0]["name"] == "Jane Doe"
     assert body[0]["email"] == "jane@example.com"
+    assert body[0]["archived"] is False
     assert body[1]["id"] == str(OTHER_PATIENT_ID)
+
+
+def test_list_patients_archived_filter(patient_client: TestClient) -> None:
+    archive_res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"archived": True},
+    )
+    assert archive_res.status_code == 200
+    assert archive_res.json()["archived"] is True
+    assert archive_res.json()["archived_at"] is not None
+
+    active = patient_client.get("/patients")
+    assert active.status_code == 200
+    assert {p["id"] for p in active.json()} == {str(OTHER_PATIENT_ID)}
+
+    archived = patient_client.get("/patients", params={"archived": True})
+    assert archived.status_code == 200
+    body = archived.json()
+    assert len(body) == 1
+    assert body[0]["id"] == str(PATIENT_ID)
+    assert body[0]["archived"] is True
 
 
 def test_update_patient_phone_returns_200(patient_client: TestClient) -> None:
@@ -213,6 +251,23 @@ def test_update_patient_clears_email(patient_client: TestClient) -> None:
     )
     assert res.status_code == 200
     assert res.json()["email"] is None
+
+
+def test_update_patient_archive_and_restore(patient_client: TestClient) -> None:
+    archive_res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"archived": True},
+    )
+    assert archive_res.status_code == 200
+    assert archive_res.json()["archived"] is True
+
+    restore_res = patient_client.patch(
+        f"/patients/{PATIENT_ID}",
+        json={"archived": False},
+    )
+    assert restore_res.status_code == 200
+    assert restore_res.json()["archived"] is False
+    assert restore_res.json()["archived_at"] is None
 
 
 def test_update_patient_missing_returns_404(patient_client: TestClient) -> None:
@@ -261,6 +316,41 @@ def test_update_patient_persists_in_database(make_client: ClientFactory) -> None
             body = update_res.json()
             assert body["phone"] == "050-1111111"
             assert body["email"] == "updated@example.com"
+
+
+@pytest.mark.integration
+def test_archive_patient_persists_in_database(make_client: ClientFactory) -> None:
+    with get_database_url() as database_url:
+        client, _ = make_client(database_url=database_url)
+        with client:
+            create_res = client.post(
+                "/patients",
+                json={"name": "Archive Me", "phone": "050-2222222"},
+            )
+            assert create_res.status_code == 201
+            patient_id = create_res.json()["id"]
+
+            archive_res = client.patch(
+                f"/patients/{patient_id}",
+                json={"archived": True},
+            )
+            assert archive_res.status_code == 200
+            assert archive_res.json()["archived"] is True
+            assert archive_res.json()["archived_at"] is not None
+
+            active = client.get("/patients")
+            assert patient_id not in {p["id"] for p in active.json()}
+
+            archived = client.get("/patients", params={"archived": True})
+            assert patient_id in {p["id"] for p in archived.json()}
+
+            restore_res = client.patch(
+                f"/patients/{patient_id}",
+                json={"archived": False},
+            )
+            assert restore_res.status_code == 200
+            assert restore_res.json()["archived"] is False
+            assert restore_res.json()["archived_at"] is None
 
 
 @pytest.mark.integration
@@ -323,4 +413,5 @@ def test_add_patient_persists_in_database(make_client: ClientFactory) -> None:
             assert body["name"] == "John Smith"
             assert body["phone"] == "052-9876543"
             assert body["email"] is None
+            assert body["archived"] is False
             assert uuid.UUID(body["id"])

@@ -117,6 +117,45 @@ async def _migrate_next_meeting_reports(conn: AsyncConnection) -> None:
     )
 
 
+async def _migrate_patients_archive(conn: AsyncConnection) -> None:
+    """Add archived / archived_at to legacy patients tables."""
+    table_exists = await conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'patients'"
+        )
+    )
+    if table_exists.scalar_one_or_none() is None:
+        return
+
+    cols = set(
+        (
+            await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'patients'"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if "archived" not in cols:
+        await conn.execute(
+            text(
+                "ALTER TABLE patients "
+                "ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false"
+            )
+        )
+    if "archived_at" not in cols:
+        await conn.execute(
+            text(
+                "ALTER TABLE patients "
+                "ADD COLUMN archived_at TIMESTAMPTZ NULL"
+            )
+        )
+
+
 async def init_database(settings: Settings) -> None:
     """Create tables for all imported ORM models.
 
@@ -152,6 +191,7 @@ async def init_database(settings: Settings) -> None:
             await conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
 
         await _migrate_next_meeting_reports(conn)
+        await _migrate_patients_archive(conn)
         await conn.run_sync(Base.metadata.create_all)
 
 

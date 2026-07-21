@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,8 @@ def _to_patient(record: PatientRecord) -> Patient:
         phone=record.phone,
         email=record.email,
         created_at=record.created_at,
+        archived=bool(record.archived),
+        archived_at=record.archived_at,
     )
 
 
@@ -38,10 +41,13 @@ class PatientRepository:
         await self._session.refresh(record)
         return _to_patient(record)
 
-    async def list_all(self, user_id: uuid.UUID) -> list[Patient]:
+    async def list_all(self, user_id: uuid.UUID, *, archived: bool = False) -> list[Patient]:
         result = await self._session.execute(
             select(PatientRecord)
-            .where(PatientRecord.user_id == user_id)
+            .where(
+                PatientRecord.user_id == user_id,
+                PatientRecord.archived.is_(archived),
+            )
             .order_by(PatientRecord.created_at.desc())
         )
         return [_to_patient(record) for record in result.scalars().all()]
@@ -78,6 +84,14 @@ class PatientRepository:
         if "email" in updates:
             email_value = updates["email"]
             record.email = None if email_value is None else str(email_value)
+        if "archived" in updates:
+            archived = bool(updates["archived"])
+            record.archived = archived
+            if archived:
+                if record.archived_at is None:
+                    record.archived_at = datetime.now(UTC)
+            else:
+                record.archived_at = None
         await self._session.commit()
         await self._session.refresh(record)
         return _to_patient(record)

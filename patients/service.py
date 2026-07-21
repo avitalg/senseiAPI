@@ -25,8 +25,13 @@ class PatientService:
             email=email,
         )
 
-    async def list_patients(self, user_id: uuid.UUID) -> list[Patient]:
-        return await self._repository.list_all(user_id)
+    async def list_patients(
+        self,
+        user_id: uuid.UUID,
+        *,
+        archived: bool = False,
+    ) -> list[Patient]:
+        return await self._repository.list_all(user_id, archived=archived)
 
     async def get_patient(self, user_id: uuid.UUID, patient_id: uuid.UUID) -> Patient:
         return await self._repository.get(user_id, patient_id)
