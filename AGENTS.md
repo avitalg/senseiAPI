@@ -10,6 +10,11 @@ Cursor users: the same rules live in `.cursor/rules/` and apply automatically.
   `TRANSCRIBER_BACKEND`: `elevenlabs` (default, hosted, needs `ELEVENLABS_API_KEY`) and
   `whisper` (local `faster-whisper`). Both must return the same `Transcript` shape.
   Never let tests hit the real ElevenLabs API — inject a fake client.
+- Session summaries and next-meeting prep reports share backends behind
+  `Summarizer` / `ReportSynthesizer`, picked by `SUMMARY_BACKEND`: `ollama`
+  (default, local PHI-safe) and `openai` (hosted; needs `OPENAI_API_KEY`, reuses
+  `OPENAI_MODEL`). Never let tests hit the real Ollama/OpenAI APIs — inject a
+  fake client.
 - Chat assistant (`assistant/`): `POST /assistant/chat` runs a streaming tool-call loop
   and emits a **Vercel AI-SDK "UI message stream"** (SSE) — text + tool-input/tool-output
   parts — that the Sensei frontend consumes with `useChat`. Hosted OpenAI Python SDK

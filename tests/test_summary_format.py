@@ -70,3 +70,22 @@ def test_normalize_summary_output_recovers_nested_object() -> None:
     assert md.startswith("## נושאים מרכזיים")
     assert "שינה וחרדה" in md
     assert "- מעקב שינה" in md
+
+
+def test_normalize_summary_output_repairs_missing_commas_in_follow_up() -> None:
+    """Ollama often emits adjacent strings in follow_up without commas."""
+    raw = """\
+{
+  "main_topics": "יצירת ברית, הערכה ראשונית",
+  "therapist_interventions": "ניסיון לברר עבר",
+  "risk_signs": "",
+  "follow_up": [
+    "לשכוח את העבר במובן של לא שכח, וללמד לחיות איתו"
+    "להתבונן מתי המטופל/ת מרגיש דחף פיזי לברוח"
+  ]
+}
+"""
+    md = normalize_summary_output(raw)
+    assert md.startswith("## נושאים מרכזיים")
+    assert "יצירת ברית" in md
+    assert "עבר" in md or "דחף" in md

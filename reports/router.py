@@ -17,6 +17,7 @@ from reports.models import MeetingPatientMismatchError, NoUpcomingMeetingError, 
 from reports.schemas import MeetingReportListItem, NextMeetingReportResponse
 from reports.service import NextMeetingReportService, run_report_generation
 from summaries.dependencies import get_summary_reader
+from summaries.format import normalize_summary_output
 from summaries.repository import SummaryRepository
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,9 @@ async def _report_response(
         else:
             ready = await summaries.list_ready_for_patient(user_id, report.patient_id, limit=1)
         if ready:
-            text = ready[0].text.strip()
+            # Summaries are often stored as structured JSON; never expose raw JSON
+            # as the prep-report "last session" blurb.
+            text = normalize_summary_output(ready[0].text or "").strip()
             excerpt = text if len(text) <= 600 else text[:599].rstrip() + "…"
 
     return NextMeetingReportResponse.from_report(

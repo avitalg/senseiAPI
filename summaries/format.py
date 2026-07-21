@@ -91,9 +91,54 @@ _SUMMARY_KEYS = frozenset(
     }
 )
 
+# Models often omit commas between adjacent JSON strings (esp. in follow_up arrays).
+_MISSING_COMMA_BETWEEN_STRINGS = re.compile(r'"\s*\n\s*"')
+_MISSING_COMMA_SAME_LINE = re.compile(r'"\s+"')
+_TRAILING_COMMA = re.compile(r",\s*([}\]])")
+
+_STRING_FIELD = re.compile(
+    r'"(main_topics|topics|therapist_interventions|interventions|risk_signs|risk)"\s*:\s*"((?:\\.|[^"\\])*)"',
+    re.DOTALL,
+)
+_ARRAY_FIELD = re.compile(
+    r'"(follow_up|followup)"\s*:\s*\[(.*?)\]',
+    re.DOTALL,
+)
+_ARRAY_STRING = re.compile(r'"((?:\\.|[^"\\])*)"')
+
 
 def _looks_like_summary(data: dict[str, Any]) -> bool:
     return bool(_SUMMARY_KEYS.intersection(data.keys()))
+
+
+def _repair_almost_json(text: str) -> str:
+    """Fix common LLM JSON mistakes enough for json.loads to succeed."""
+    fixed = _MISSING_COMMA_BETWEEN_STRINGS.sub('",\n"', text)
+    fixed = _MISSING_COMMA_SAME_LINE.sub('", "', fixed)
+    fixed = _TRAILING_COMMA.sub(r"\1", fixed)
+    return fixed
+
+
+def _unescape_json_string(value: str) -> str:
+    try:
+        return json.loads(f'"{value}"')
+    except json.JSONDecodeError:
+        return value.replace('\\"', '"').replace("\\n", "\n").strip()
+
+
+def _salvage_summary_fields(text: str) -> dict[str, Any] | None:
+    """Pull summary fields with regex when the blob is not valid JSON."""
+    data: dict[str, Any] = {}
+    for match in _STRING_FIELD.finditer(text):
+        key, raw_val = match.group(1), match.group(2)
+        data[key] = _unescape_json_string(raw_val)
+    arr = _ARRAY_FIELD.search(text)
+    if arr:
+        items = [_unescape_json_string(m.group(1)) for m in _ARRAY_STRING.finditer(arr.group(2))]
+        data[arr.group(1)] = [item for item in items if item]
+    if not _looks_like_summary(data):
+        return None
+    return data
 
 
 def _extract_json_dict(cleaned: str) -> dict[str, Any] | None:
@@ -102,27 +147,30 @@ def _extract_json_dict(cleaned: str) -> dict[str, Any] | None:
     Models sometimes emit broken outer JSON and a clean nested object — walk ``{``
     candidates from the end so we still recover structured fields.
     """
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, dict) and _looks_like_summary(data):
-            return data
-    except json.JSONDecodeError:
-        pass
-
-    end = cleaned.rfind("}")
-    if end < 0:
-        return None
-    # Prefer later (nested) objects when the outer wrapper is broken.
-    for start in range(end, -1, -1):
-        if cleaned[start] != "{":
-            continue
+    candidates = [cleaned, _repair_almost_json(cleaned)]
+    for candidate in candidates:
         try:
-            data = json.loads(cleaned[start : end + 1])
+            data = json.loads(candidate)
+            if isinstance(data, dict) and _looks_like_summary(data):
+                return data
         except json.JSONDecodeError:
+            pass
+
+        end = candidate.rfind("}")
+        if end < 0:
             continue
-        if isinstance(data, dict) and _looks_like_summary(data):
-            return data
-    return None
+        # Prefer later (nested) objects when the outer wrapper is broken.
+        for start in range(end, -1, -1):
+            if candidate[start] != "{":
+                continue
+            try:
+                data = json.loads(candidate[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict) and _looks_like_summary(data):
+                return data
+
+    return _salvage_summary_fields(cleaned)
 
 
 def normalize_summary_output(raw: str) -> str:

@@ -53,6 +53,18 @@ so switching backends never changes the API response.
 Startup fails if `TRANSCRIBER_BACKEND=elevenlabs` and no API key is set, rather
 than silently downgrading to Whisper.
 
+## Session summaries
+
+Session summaries and next-meeting prep reports share `SUMMARY_BACKEND`:
+
+| Backend | Value | Notes |
+| --- | --- | --- |
+| Ollama (local) | `ollama` (default) | PHI stays on-host. Needs a running Ollama + `OLLAMA_MODEL` pulled. |
+| OpenAI | `openai` | Hosted Chat Completions. Needs `OPENAI_API_KEY`; reuses `OPENAI_MODEL`. Transcripts / summary text leave the host. |
+
+Both paths use their respective system prompts and normalize model output the same way.
+Startup fails if `SUMMARY_BACKEND=openai` and no API key/model is set.
+
 ## TTS example
 
 Fill the ElevenLabs placeholders in [`tests/test_tts_example.py`](tests/test_tts_example.py), then

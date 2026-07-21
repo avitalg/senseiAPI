@@ -218,7 +218,40 @@ def test_get_ready_report_returns_200_with_sections() -> None:
     assert body["intro"] == "סקירה"
     assert body["changes"] == ["א"]
     assert body["open_topics"] == ["ב"]
+    assert body["model"] == "qwen2.5:7b-instruct"
     assert body["last_summary_excerpt"]
+    assert "סיכום ארוך" in body["last_summary_excerpt"]
+
+
+def test_get_ready_report_formats_json_summary_excerpt() -> None:
+    """Structured summary JSON must not be returned raw in last_summary_excerpt."""
+    report = _stored(
+        "ready",
+        intro="סקירה",
+        changes=["א"],
+        open_topics=["ב"],
+        source_meeting_ids=[uuid.uuid4()],
+    )
+    ready = [
+        ReadyMeetingSummary(
+            meeting_id=uuid.uuid4(),
+            start_at=NOW - timedelta(hours=1),
+            text=(
+                '{"main_topics":"יצירת ברית","therapist_interventions":"בירור",'
+                '"risk_signs":"","follow_up":["מעקב שינה"]}'
+            ),
+        )
+    ]
+    client = _client(report=report, ready=ready)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}")
+
+    assert res.status_code == 200
+    excerpt = res.json()["last_summary_excerpt"]
+    assert excerpt
+    assert "main_topics" not in excerpt
+    assert "## נושאים מרכזיים" in excerpt
+    assert "יצירת ברית" in excerpt
 
 
 def test_get_ready_report_includes_generated_at() -> None:

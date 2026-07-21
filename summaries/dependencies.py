@@ -2,12 +2,23 @@ from core.config import Settings, get_settings
 from core.database import SessionDep, SettingsDep
 from summaries.repository import SummaryRepository
 from summaries.service import SummaryService
-from summaries.summarizer import OllamaSummarizer, Summarizer
+from summaries.summarizer import OllamaSummarizer, OpenAISummarizer, Summarizer
 from transcripts.repository import TranscriptRepository
 
 
 def get_summarizer(settings: Settings) -> Summarizer:
-    # Imported lazily so the SDK is only needed when a summary is actually generated.
+    """Build the configured summarizer (Ollama local or OpenAI hosted)."""
+    if settings.summary_backend == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required when SUMMARY_BACKEND=openai")
+        # Imported lazily so the SDK is only needed when this backend is selected.
+        from openai import AsyncOpenAI
+
+        return OpenAISummarizer(
+            client=AsyncOpenAI(api_key=settings.openai_api_key),
+            model=settings.openai_model,
+        )
+
     from ollama import AsyncClient
 
     return OllamaSummarizer(

@@ -1,10 +1,13 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
+from core.config import Settings
+from summaries.dependencies import get_summarizer
 from summaries.models import Summary, SummaryFailedError
-from summaries.summarizer import OllamaSummarizer
+from summaries.summarizer import OllamaSummarizer, OpenAISummarizer
 
 HEBREW_TRANSCRIPT = "מטפל: איך עבר עליך השבוע? מטופל: היה קשה, הרבה חרדה."
 HEBREW_SUMMARY = "## נושאים מרכזיים\nחרדה במהלך השבוע."
@@ -34,6 +37,30 @@ class _FakeOllamaClient:
         if self._error is not None:
             raise self._error
         return {"message": {"content": self._content}}
+
+
+class _FakeOpenAIClient:
+    """Minimal stand-in for ``openai.AsyncOpenAI`` chat.completions."""
+
+    def __init__(self, content: str = HEBREW_SUMMARY, error: Exception | None = None) -> None:
+        self._content = content
+        self._error = error
+        self.calls: list[dict[str, Any]] = []
+        self.chat = MagicMock()
+        self.chat.completions = MagicMock()
+        self.chat.completions.create = self._create
+
+    async def _create(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if self._error is not None:
+            raise self._error
+        msg = MagicMock()
+        msg.content = self._content
+        choice = MagicMock()
+        choice.message = msg
+        response = MagicMock()
+        response.choices = [choice]
+        return response
 
 
 @pytest.mark.anyio
@@ -108,3 +135,78 @@ async def test_summarize_rejects_an_empty_response() -> None:
 
     with pytest.raises(SummaryFailedError):
         await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+
+@pytest.mark.anyio
+async def test_openai_summarize_returns_the_models_summary() -> None:
+    client = _FakeOpenAIClient()
+    summarizer = OpenAISummarizer(client=client, model="gpt-4o")
+
+    summary = await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+    assert summary == Summary(text=HEBREW_SUMMARY, model="gpt-4o")
+    assert client.calls[0]["model"] == "gpt-4o"
+    assert client.calls[0]["temperature"] == 0
+    assert client.calls[0]["messages"][1]["content"] == HEBREW_TRANSCRIPT
+
+
+@pytest.mark.anyio
+async def test_openai_summarize_wraps_api_errors() -> None:
+    client = _FakeOpenAIClient(error=RuntimeError("rate limited"))
+    summarizer = OpenAISummarizer(client=client, model="gpt-4o")
+
+    with pytest.raises(SummaryFailedError):
+        await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+
+@pytest.mark.anyio
+async def test_openai_summarize_rejects_empty_content() -> None:
+    client = _FakeOpenAIClient(content="   ")
+    summarizer = OpenAISummarizer(client=client, model="gpt-4o")
+
+    with pytest.raises(SummaryFailedError):
+        await summarizer.summarize(text=HEBREW_TRANSCRIPT, language="he")
+
+
+def test_get_summarizer_openai_requires_api_key() -> None:
+    settings = Settings(
+        summary_backend="openai",
+        openai_api_key=None,
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        get_summarizer(settings)
+
+
+def test_get_summarizer_selects_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_cls = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr("openai.AsyncOpenAI", fake_cls)
+    settings = Settings(
+        summary_backend="openai",
+        openai_api_key="sk-test",
+        openai_model="gpt-4o-mini",
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+    summarizer = get_summarizer(settings)
+    assert isinstance(summarizer, OpenAISummarizer)
+    fake_cls.assert_called_once_with(api_key="sk-test")
+
+
+def test_get_summarizer_selects_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_cls = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr("ollama.AsyncClient", fake_cls)
+    settings = Settings(
+        summary_backend="ollama",
+        ollama_host="http://localhost:11434",
+        ollama_model="llama3.1:latest",
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+    summarizer = get_summarizer(settings)
+    assert isinstance(summarizer, OllamaSummarizer)
+    fake_cls.assert_called_once()

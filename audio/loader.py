@@ -35,6 +35,15 @@ _EXTENSION_BY_TYPE = {
 }
 
 
+def normalize_audio_content_type(content_type: str) -> str:
+    """Strip MIME parameters (e.g. ``;codecs=opus``) for allow-list matching.
+
+    MediaRecorder often sends ``audio/webm;codecs=opus``; the allow-list stores
+    the bare type ``audio/webm``.
+    """
+    return content_type.split(";", 1)[0].strip().lower()
+
+
 def _is_safe_audio_id(audio_id: str) -> bool:
     """Reject empty, traversal, or nested ids so lookups stay inside the upload dir."""
     return bool(audio_id) and audio_id not in {".", ".."} and Path(audio_id).name == audio_id
@@ -52,13 +61,14 @@ class AudioLoader:
     ) -> None:
         self._upload_dir = upload_dir
         self._max_bytes = max_bytes
-        self._allowed_types = frozenset(allowed_types)
+        self._allowed_types = frozenset(normalize_audio_content_type(t) for t in allowed_types)
 
     async def save(self, user_id: uuid.UUID, file: UploadFile) -> SavedAudio:
         """Validate and persist an uploaded audio file, returning its metadata."""
-        content_type = file.content_type or ""
+        raw_type = file.content_type or ""
+        content_type = normalize_audio_content_type(raw_type)
         if content_type not in self._allowed_types:
-            raise UnsupportedAudioTypeError(content_type)
+            raise UnsupportedAudioTypeError(raw_type or content_type)
 
         data = await file.read()
         if not data:

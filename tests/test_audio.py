@@ -67,6 +67,21 @@ def test_upload_audio_accepts_m4a(make_client: ClientFactory) -> None:
     assert body["id"].endswith(".m4a")
 
 
+def test_upload_audio_accepts_mediarecorder_webm_with_codecs(
+    make_client: ClientFactory,
+) -> None:
+    """Browser MediaRecorder sends ``audio/webm;codecs=opus`` — allow-list is bare type."""
+    client, _ = make_client()
+    res = client.post(
+        "/audio/upload",
+        files={"file": ("recording.webm", b"fake-webm", "audio/webm;codecs=opus")},
+    )
+    assert res.status_code == 201
+    body = res.json()
+    assert body["content_type"] == "audio/webm"
+    assert body["id"].endswith(".webm")
+
+
 def test_upload_audio_rejects_unsupported_type(make_client: ClientFactory) -> None:
     client, _ = make_client()
     res = client.post(

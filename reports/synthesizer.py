@@ -21,6 +21,22 @@ class OllamaClient(Protocol):
     ) -> Any: ...
 
 
+class OpenAIChatCompletions(Protocol):
+    """Slice of ``AsyncOpenAI.chat.completions`` used for report synthesis."""
+
+    async def create(self, **kwargs: Any) -> Any: ...
+
+
+class OpenAIChatNamespace(Protocol):
+    @property
+    def completions(self) -> OpenAIChatCompletions: ...
+
+
+class OpenAIClient(Protocol):
+    @property
+    def chat(self) -> OpenAIChatNamespace: ...
+
+
 class ReportSynthesizer(ABC):
     """Turns past meeting summaries into a cross-meeting prep brief."""
 
@@ -63,6 +79,49 @@ class OllamaReportSynthesizer(ReportSynthesizer):
             raise ReportFailedError(f"report generation failed: {exc}") from exc
 
         raw = response["message"]["content"].strip()
+        if not raw:
+            raise ReportFailedError("the model returned an empty report")
+
+        intro, changes, open_topics = parse_report_output(raw)
+        return GeneratedReport(
+            intro=intro,
+            changes=changes,
+            open_topics=open_topics,
+            model=self._model,
+            raw_text=raw,
+        )
+
+
+class OpenAIReportSynthesizer(ReportSynthesizer):
+    """Prep-report synthesis via the hosted OpenAI Chat Completions API.
+
+    Summary text leaves the host — use only when SUMMARY_BACKEND=openai is intentional.
+    """
+
+    def __init__(self, *, client: OpenAIClient, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    async def synthesize(self, *, summaries: Sequence[ReadyMeetingSummary]) -> GeneratedReport:
+        user_text = format_summaries_for_prompt(summaries)
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": NEXT_MEETING_REPORT_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_text},
+                ],
+                temperature=0,
+            )
+        except Exception as exc:
+            logger.error("openai report synthesis failed", exc_info=exc)
+            raise ReportFailedError(f"report generation failed: {exc}") from exc
+
+        try:
+            raw = (response.choices[0].message.content or "").strip()
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise ReportFailedError("the model returned an empty report") from exc
+
         if not raw:
             raise ReportFailedError("the model returned an empty report")
 

@@ -13,7 +13,7 @@ from reports.models import (
 )
 from reports.parse import FOLLOWUP_HEADING, bullets_under_heading
 from reports.repository import NextMeetingReportRepository
-from reports.synthesizer import OllamaReportSynthesizer, ReportSynthesizer
+from reports.synthesizer import OllamaReportSynthesizer, OpenAIReportSynthesizer, ReportSynthesizer
 from summaries.repository import SummaryRepository
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,18 @@ NO_READY_SUMMARIES_ERROR = "אין סיכומי פגישות מוכנים"
 
 
 def build_synthesizer(settings: Settings) -> ReportSynthesizer:
+    """Build the configured report synthesizer (same SUMMARY_BACKEND as summaries)."""
+    if settings.summary_backend == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required when SUMMARY_BACKEND=openai")
+        # Imported lazily so the SDK is only needed when this backend is selected.
+        from openai import AsyncOpenAI
+
+        return OpenAIReportSynthesizer(
+            client=AsyncOpenAI(api_key=settings.openai_api_key),
+            model=settings.openai_model,
+        )
+
     from ollama import AsyncClient
 
     return OllamaReportSynthesizer(

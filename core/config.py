@@ -81,8 +81,10 @@ class Settings(BaseSettings):
     # Langfuse's own v4 env var name for the API host (Cloud EU/US or self-hosted).
     langfuse_base_url: str = "https://cloud.langfuse.com"
 
-    # Session summaries, generated locally by Ollama so transcripts (PHI) never leave the host.
+    # Session summaries. Default ollama keeps transcripts (PHI) on-host; openai
+    # reuses OPENAI_API_KEY / OPENAI_MODEL (transcripts leave the host).
     summary_enabled: bool = True
+    summary_backend: Literal["ollama", "openai"] = "ollama"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:latest"
     # Ollama defaults num_ctx to 2048 and silently truncates longer input, which would
@@ -163,6 +165,15 @@ def validate_startup_settings(settings: Settings) -> None:
         if settings.tts_timeout_seconds <= 0:
             raise SettingsConfigurationError("TTS_TIMEOUT_SECONDS must be positive")
 
+    if settings.summary_enabled and settings.summary_backend == "openai":
+        if not settings.openai_api_key or not settings.openai_api_key.strip():
+            raise SettingsConfigurationError(
+                "OPENAI_API_KEY must be set when SUMMARY_BACKEND=openai"
+            )
+        if not settings.openai_model or not settings.openai_model.strip():
+            raise SettingsConfigurationError(
+                "OPENAI_MODEL must be set when SUMMARY_BACKEND=openai"
+            )
 
 @lru_cache
 def get_settings() -> Settings:
