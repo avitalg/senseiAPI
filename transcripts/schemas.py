@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
-
 from pydantic import BaseModel
 
 from transcripts.models import StoredTranscript
@@ -15,7 +13,12 @@ class MeetingTranscriptOut(BaseModel):
     excerpt: str | None = None
 
     @classmethod
-    def from_stored(cls, transcript: StoredTranscript, *, excerpt_max: int = 240) -> MeetingTranscriptOut:
+    def from_stored(
+        cls,
+        transcript: StoredTranscript,
+        *,
+        excerpt_max: int = 240,
+    ) -> MeetingTranscriptOut:
         text = (transcript.raw_text or "").strip()
         excerpt: str | None = None
         if text:

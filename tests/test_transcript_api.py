@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -42,7 +43,7 @@ class _FakeTranscriptRepo:
         user_id: uuid.UUID,
         meeting_id: uuid.UUID,
     ) -> bool:
-        return await self.delete(user_id, meeting_id)
+        return cast(bool, await self.delete(user_id, meeting_id))
 
 
 class _FakeSummaryRepo:
@@ -54,7 +55,7 @@ class _FakeSummaryRepo:
         user_id: uuid.UUID,
         meeting_id: uuid.UUID,
     ) -> bool:
-        return await self.delete(user_id, meeting_id)
+        return cast(bool, await self.delete(user_id, meeting_id))
 
 
 async def _fake_db_session() -> AsyncIterator[object]:
@@ -62,7 +63,7 @@ async def _fake_db_session() -> AsyncIterator[object]:
 
 
 @pytest.fixture(autouse=True)
-def _secure_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _secure_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     settings = Settings(
         upload_dir=tmp_path / "uploads",
         enable_security=False,

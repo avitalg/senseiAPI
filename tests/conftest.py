@@ -79,6 +79,35 @@ def make_client(tmp_path: Path) -> Iterator[ClientFactory]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_unit_settings_from_dotenv(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> Iterator[None]:
+    """Unit tests must not inherit the developer's ``.env`` (e.g. ENABLE_SECURITY).
+
+    Integration tests keep the real settings. Per-test fixtures like ``make_client``
+    may replace this override during the test body.
+    """
+    if request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    settings = Settings(
+        upload_dir=tmp_path / "unit-uploads",
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+    previous = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    yield
+    if previous is not None:
+        app.dependency_overrides[get_settings] = previous
+    else:
+        app.dependency_overrides.pop(get_settings, None)
+
+
+@pytest.fixture(autouse=True)
 def _skip_database_lifecycle_for_unit_tests(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
