@@ -159,19 +159,25 @@ def parse_report_output(text: str) -> tuple[str, list[str], list[str]]:
     return parse_report_markdown(text)
 
 
+def _ensure_terminal_punctuation(text: str) -> str:
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
 def report_to_speech_text(report: StoredReport) -> str:
     parts: list[str] = []
 
     intro = (report.intro or "").strip()
     if intro:
-        parts.append(intro)
+        parts.append(_ensure_terminal_punctuation(intro))
 
     if report.changes:
         label = CHANGES_HEADING.removeprefix("## ")
-        parts.append(f"{label}: " + "; ".join(report.changes))
+        parts.append(_ensure_terminal_punctuation(f"{label}: " + "; ".join(report.changes)))
 
     if report.open_topics:
         label = OPEN_HEADING.removeprefix("## ")
-        parts.append(f"{label}: " + "; ".join(report.open_topics))
+        parts.append(_ensure_terminal_punctuation(f"{label}: " + "; ".join(report.open_topics)))
 
-    return "\n".join(parts)
+    # A blank line between sections gives TTS engines a paragraph-break pause cue;
+    # a single "\n" is often collapsed to a space before synthesis.
+    return "\n\n".join(parts)

@@ -205,6 +205,43 @@ def test_report_to_speech_text_includes_all_sections() -> None:
     assert text.index("שינויים ומגמות") < text.index("נושאים פתוחים")
 
 
+def test_report_to_speech_text_separates_sections_with_blank_line() -> None:
+    report = _stored_report(
+        intro="מצב יציב.",
+        changes=["שיפור בוויסות"],
+        open_topics=["לחזור לשינה"],
+    )
+
+    text = report_to_speech_text(report)
+
+    assert text == (
+        "מצב יציב.\n\n"
+        "שינויים ומגמות: שיפור בוויסות.\n\n"
+        "נושאים פתוחים לפגישה הבאה: לחזור לשינה."
+    )
+
+
+def test_report_to_speech_text_appends_missing_terminal_punctuation() -> None:
+    report = _stored_report(
+        intro="מצב יציב",
+        changes=["שיפור בוויסות"],
+        open_topics=["לחזור לשינה"],
+    )
+
+    text = report_to_speech_text(report)
+
+    assert "מצב יציב.\n\n" in text
+    assert text.endswith("לחזור לשינה.")
+
+
+def test_report_to_speech_text_does_not_double_punctuate() -> None:
+    report = _stored_report(intro="מה קורה?", changes=[], open_topics=[])
+
+    text = report_to_speech_text(report)
+
+    assert text == "מה קורה?"
+
+
 def test_report_to_speech_text_omits_empty_sections() -> None:
     report = _stored_report(intro="מצב יציב.", changes=[], open_topics=[])
 
