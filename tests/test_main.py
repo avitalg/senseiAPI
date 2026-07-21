@@ -219,6 +219,38 @@ def test_startup_settings_rejects_non_positive_tts_timeout(timeout_seconds: int)
         validate_startup_settings(settings)
 
 
+@pytest.mark.parametrize("public_key", [None, "", " "])
+def test_startup_settings_requires_langfuse_public_key(public_key: str | None) -> None:
+    settings = Settings(
+        langfuse_enabled=True, langfuse_public_key=public_key, langfuse_secret_key="sk"
+    )
+
+    with pytest.raises(SettingsConfigurationError, match="LANGFUSE_PUBLIC_KEY"):
+        validate_startup_settings(settings)
+
+
+@pytest.mark.parametrize("secret_key", [None, "", " "])
+def test_startup_settings_requires_langfuse_secret_key(secret_key: str | None) -> None:
+    settings = Settings(
+        langfuse_enabled=True, langfuse_public_key="pk", langfuse_secret_key=secret_key
+    )
+
+    with pytest.raises(SettingsConfigurationError, match="LANGFUSE_SECRET_KEY"):
+        validate_startup_settings(settings)
+
+
+def test_startup_settings_ignores_langfuse_keys_when_disabled() -> None:
+    settings = Settings(langfuse_enabled=False, langfuse_public_key=None, langfuse_secret_key=None)
+
+    validate_startup_settings(settings)
+
+
+def test_startup_settings_accepts_valid_langfuse_configuration() -> None:
+    settings = Settings(langfuse_enabled=True, langfuse_public_key="pk", langfuse_secret_key="sk")
+
+    validate_startup_settings(settings)
+
+
 def test_unknown_route_returns_404() -> None:
     res = client.get("/does-not-exist")
     assert res.status_code == 404

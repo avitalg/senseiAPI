@@ -123,6 +123,24 @@ class CalendarEventRepository:
         record = result.scalar_one_or_none()
         return _to_event(record) if record else None
 
+    async def find_latest_meeting_for_patient(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+    ) -> CalendarEvent | None:
+        """Most recent meeting for the patient, regardless of when — newest first."""
+        result = await self._session.execute(
+            select(CalendarEventRecord)
+            .where(
+                CalendarEventRecord.user_id == user_id,
+                CalendarEventRecord.patient_id == patient_id,
+            )
+            .order_by(CalendarEventRecord.start_at.desc())
+            .limit(1)
+        )
+        record = result.scalar_one_or_none()
+        return _to_event(record) if record else None
+
     async def update_meeting(
         self,
         user_id: uuid.UUID,

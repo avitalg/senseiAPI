@@ -12,6 +12,7 @@ from fastapi import Depends, Header, HTTPException, status
 from assistant.client import OpenAIAssistant
 from assistant.service import AssistantService
 from assistant.tools import Tools
+from assistant.tracing import LangfuseTracer, build_tracer
 from core.config import Settings, get_settings
 
 
@@ -43,8 +44,17 @@ def get_assistant_service(
             detail="the assistant is not configured (missing OPENAI_API_KEY)",
         )
 
+    # Build the tracer first: constructing it initialises the Langfuse client that the
+    # OpenAI drop-in below reuses to nest each model round under the request's trace.
+    tracer = build_tracer(settings)
+
     # Imported lazily so the SDK is only required when the assistant is actually used.
-    from openai import AsyncOpenAI
+    # With tracing on, use Langfuse's drop-in AsyncOpenAI, which auto-traces every
+    # chat completion (model, tokens, cost, latency, errors) — otherwise the plain SDK.
+    if isinstance(tracer, LangfuseTracer):
+        from langfuse.openai import AsyncOpenAI  # type: ignore[attr-defined]
+    else:
+        from openai import AsyncOpenAI
 
     # Tools call back into this API's PHI-safe context surface, forwarding the
     # caller's bearer token so the self-request is authenticated.
@@ -63,6 +73,7 @@ def get_assistant_service(
     return AssistantService(
         client=client,
         max_input_tokens=settings.assistant_max_total_input_tokens,
+        tracer=tracer,
     )
 
 

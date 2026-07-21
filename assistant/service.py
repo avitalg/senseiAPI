@@ -18,6 +18,7 @@ from assistant.client import (
 from assistant.prompt import ASSISTANT_SYSTEM_PROMPT
 from assistant.schemas import ChatRequest, to_openai_messages
 from assistant.tokens import trim_to_token_budget
+from assistant.tracing import NoOpTracer, Tracer
 
 
 class AssistantService:
@@ -29,37 +30,52 @@ class AssistantService:
         client: AssistantClient,
         system_prompt: str = ASSISTANT_SYSTEM_PROMPT,
         max_input_tokens: int | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
         self._max_input_tokens = max_input_tokens
+        self._tracer = tracer or NoOpTracer()
 
-    async def stream_sse(self, request: ChatRequest) -> AsyncIterator[str]:
+    async def stream_sse(
+        self,
+        request: ChatRequest,
+        *,
+        user_id: str | None = None,
+        session_id: str | None = None,
+    ) -> AsyncIterator[str]:
         messages = to_openai_messages(request, self._system_prompt)
         if self._max_input_tokens:
             messages = trim_to_token_budget(messages, self._max_input_tokens)
 
-        yield sse.start()
-        text_started = False
-        try:
-            async for event in self._client.stream(messages):
-                if isinstance(event, ToolCallChunk):
-                    yield sse.tool_input_available(event.id, event.name, event.arguments)
-                elif isinstance(event, ToolResultChunk):
-                    yield sse.tool_output_available(event.id, event.output)
-                elif isinstance(event, TextChunk):
-                    if not text_started:
-                        yield sse.text_start()
-                        text_started = True
-                    yield sse.text_delta(event.text)
-        except AssistantError as exc:
-            # A mid-stream model failure becomes an error part the client renders,
-            # never a broken HTTP response (the 200 stream has already begun).
-            yield sse.error(str(exc))
-            yield sse.DONE
-            return
+        # The trace spans the whole streamed reply so the model rounds nest under it;
+        # with the default NoOpTracer this adds nothing.
+        with self._tracer.trace_chat(user_id=user_id, session_id=session_id) as trace:
+            yield sse.start()
+            text_started = False
+            reply: list[str] = []
+            try:
+                async for event in self._client.stream(messages):
+                    if isinstance(event, ToolCallChunk):
+                        yield sse.tool_input_available(event.id, event.name, event.arguments)
+                    elif isinstance(event, ToolResultChunk):
+                        yield sse.tool_output_available(event.id, event.output)
+                    elif isinstance(event, TextChunk):
+                        if not text_started:
+                            yield sse.text_start()
+                            text_started = True
+                        reply.append(event.text)
+                        yield sse.text_delta(event.text)
+            except AssistantError as exc:
+                # A mid-stream model failure becomes an error part the client renders,
+                # never a broken HTTP response (the 200 stream has already begun).
+                trace.set_error(str(exc))
+                yield sse.error(str(exc))
+                yield sse.DONE
+                return
 
-        if text_started:
-            yield sse.text_end()
-        yield sse.finish()
-        yield sse.DONE
+            trace.set_output("".join(reply))
+            if text_started:
+                yield sse.text_end()
+            yield sse.finish()
+            yield sse.DONE

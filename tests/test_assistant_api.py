@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -6,8 +7,26 @@ from fastapi.testclient import TestClient
 from assistant.client import AssistantClient, AssistantError, StreamEvent, TextChunk
 from assistant.dependencies import get_assistant_service
 from assistant.service import AssistantService
+from assistant.tracing import ChatTrace, Tracer
+from auth.router import TEST_USER
 from core.config import Settings, get_settings
 from main import app
+
+
+class _RecordingTrace(ChatTrace):
+    def set_output(self, text: str) -> None: ...
+
+    def set_error(self, message: str) -> None: ...
+
+
+class _RecordingTracer(Tracer):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str | None, str | None]] = []
+
+    @contextmanager
+    def trace_chat(self, *, user_id: str | None, session_id: str | None) -> Iterator[ChatTrace]:
+        self.calls.append((user_id, session_id))
+        yield _RecordingTrace()
 
 
 class _FakeAssistant(AssistantClient):
@@ -82,6 +101,18 @@ def test_chat_rejects_a_request_with_no_user_question() -> None:
     for body in bodies:
         res = client.post("/assistant/chat", json=body)
         assert res.status_code == 422, body
+
+
+def test_chat_traces_with_the_current_user_and_conversation_id() -> None:
+    """The stream is traced under the authenticated therapist + the useChat chat id."""
+    tracer = _RecordingTracer()
+    service = AssistantService(client=_FakeAssistant(["ok"]), tracer=tracer)
+    app.dependency_overrides[get_assistant_service] = lambda: service
+
+    res = TestClient(app).post("/assistant/chat", json={"id": "conv-1", **_BODY})
+
+    assert res.status_code == 200
+    assert tracer.calls == [(str(TEST_USER.user_id), "conv-1")]
 
 
 def test_chat_returns_503_when_the_assistant_is_not_configured() -> None:

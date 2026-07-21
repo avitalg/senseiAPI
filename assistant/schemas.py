@@ -44,12 +44,24 @@ class ChatMessage(BaseModel):
         return "".join(part.text for part in self.parts if part.type == "text" and part.text)
 
 
+# Bound the conversation id: it is only a tracing/grouping label, never trusted.
+_MAX_ID_CHARS = 200
+
+
 class ChatRequest(BaseModel):
     """The body useChat sends to ``POST /assistant/chat``."""
 
     model_config = ConfigDict(extra="ignore")
 
+    # useChat sends a stable per-conversation ``id``; we use it only to group a
+    # conversation's turns into one tracing session. Optional and untrusted.
+    id: str | None = Field(default=None, max_length=_MAX_ID_CHARS)
     messages: list[ChatMessage] = Field(default_factory=list, max_length=_MAX_MESSAGES)
+
+
+def session_id(request: ChatRequest) -> str | None:
+    """The conversation id to group tracing by, or ``None`` when absent/blank."""
+    return (request.id or "").strip() or None
 
 
 def latest_question_length(request: ChatRequest) -> int:

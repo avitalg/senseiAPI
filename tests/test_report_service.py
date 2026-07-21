@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from calendar_events.models import CalendarEvent
-from reports.models import GeneratedReport, StoredReport
+from reports.models import GeneratedReport, NoUpcomingMeetingError, StoredReport
 from reports.service import (
     NO_READY_SUMMARIES_ERROR,
     NextMeetingReportService,
@@ -215,6 +215,15 @@ class _FakeCalendarRepository:
             return None
         return self._meeting
 
+    async def find_latest_meeting_for_patient(
+        self,
+        user_id: uuid.UUID,
+        patient_id: uuid.UUID,
+    ) -> CalendarEvent | None:
+        if user_id != self._meeting.user_id or patient_id != self._meeting.patient_id:
+            return None
+        return self._meeting
+
 
 def _target_meeting(*, start_at: datetime | None = None) -> CalendarEvent:
     start = start_at or datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
@@ -384,3 +393,23 @@ async def test_fail_interrupted_reports_sweeps_running_rows() -> None:
 
     assert count == 1
     assert reports.rows[MEETING_TARGET].status == "failed"
+
+
+@pytest.mark.anyio
+async def test_resolve_next_meeting_falls_back_to_latest_when_none_upcoming() -> None:
+    # A past-only meeting: no active/upcoming one, so the resolver uses the most
+    # recent meeting instead of failing — a brief can still be requested.
+    past = _target_meeting(start_at=datetime(2026, 6, 1, 10, 0, tzinfo=UTC))
+    service, _, _ = _service(ready=[], synthesizer=_FakeSynthesizer(), meeting=past)
+
+    resolved = await service.resolve_next_meeting(USER_ID, PATIENT_ID)
+
+    assert resolved.id == past.id
+
+
+@pytest.mark.anyio
+async def test_resolve_next_meeting_raises_when_patient_has_no_meetings() -> None:
+    service, _, _ = _service(ready=[], synthesizer=_FakeSynthesizer())
+
+    with pytest.raises(NoUpcomingMeetingError):
+        await service.resolve_next_meeting(USER_ID, uuid.uuid4())

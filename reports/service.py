@@ -101,11 +101,16 @@ class NextMeetingReportService:
         user_id: uuid.UUID,
         patient_id: uuid.UUID,
     ) -> CalendarEvent:
+        # Prefer an in-progress/upcoming meeting — the brief is prep for the next session.
         meeting = await self._calendar.find_active_meeting_for_patient(
             user_id,
             patient_id,
             now=self._current_time(),
         )
+        if meeting is None:
+            # No upcoming meeting: fall back to the most recent one so a history-based
+            # brief can still be produced on demand. Only fail if the patient has none.
+            meeting = await self._calendar.find_latest_meeting_for_patient(user_id, patient_id)
         if meeting is None:
             raise NoUpcomingMeetingError(patient_id)
         return meeting
