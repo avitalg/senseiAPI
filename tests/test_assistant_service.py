@@ -114,6 +114,44 @@ async def test_stream_sse_prepends_the_system_prompt() -> None:
 
 
 @pytest.mark.anyio
+async def test_stream_sse_replays_prior_tool_calls_to_the_client() -> None:
+    """A second turn whose history carries a finished discover_api call reaches the
+    client as an assistant.tool_calls + tool result pair, so the model can reuse the
+    earlier discovery instead of calling it again."""
+    client = _FakeAssistant([TextChunk("מחרתיים אין פגישות.")])
+    service = AssistantService(client=client)
+    request = ChatRequest.model_validate(
+        {
+            "messages": [
+                {"role": "user", "parts": [{"type": "text", "text": "מי הבא?"}]},
+                {
+                    "role": "assistant",
+                    "parts": [
+                        {
+                            "type": "tool-discover_api",
+                            "toolCallId": "call_1",
+                            "state": "output-available",
+                            "input": {},
+                            "output": {"endpoints": [{"path": "/assistant/context/agenda"}]},
+                        },
+                        {"type": "text", "text": "מחר יש פגישה."},
+                    ],
+                },
+                {"role": "user", "parts": [{"type": "text", "text": "ומחרתיים?"}]},
+            ]
+        }
+    )
+
+    [f async for f in service.stream_sse(request)]
+
+    assert client.seen is not None
+    roles = [m["role"] for m in client.seen]
+    assert roles == ["system", "user", "assistant", "tool", "assistant", "user"]
+    assert client.seen[2]["tool_calls"][0]["function"]["name"] == "discover_api"
+    assert client.seen[3]["tool_call_id"] == "call_1"
+
+
+@pytest.mark.anyio
 async def test_stream_sse_reports_a_mid_stream_error() -> None:
     service = AssistantService(client=_FakeAssistant([TextChunk("חלק ")], error="overloaded"))
 
