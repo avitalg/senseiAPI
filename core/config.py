@@ -171,9 +171,8 @@ def validate_startup_settings(settings: Settings) -> None:
                 "OPENAI_API_KEY must be set when SUMMARY_BACKEND=openai"
             )
         if not settings.openai_model or not settings.openai_model.strip():
-            raise SettingsConfigurationError(
-                "OPENAI_MODEL must be set when SUMMARY_BACKEND=openai"
-            )
+            raise SettingsConfigurationError("OPENAI_MODEL must be set when SUMMARY_BACKEND=openai")
+
 
 @lru_cache
 def get_settings() -> Settings:

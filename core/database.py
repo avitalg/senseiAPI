@@ -142,18 +142,10 @@ async def _migrate_patients_archive(conn: AsyncConnection) -> None:
     )
     if "archived" not in cols:
         await conn.execute(
-            text(
-                "ALTER TABLE patients "
-                "ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false"
-            )
+            text("ALTER TABLE patients ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false")
         )
     if "archived_at" not in cols:
-        await conn.execute(
-            text(
-                "ALTER TABLE patients "
-                "ADD COLUMN archived_at TIMESTAMPTZ NULL"
-            )
-        )
+        await conn.execute(text("ALTER TABLE patients ADD COLUMN archived_at TIMESTAMPTZ NULL"))
 
 
 async def init_database(settings: Settings) -> None:

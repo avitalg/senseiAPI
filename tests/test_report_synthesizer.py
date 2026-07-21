@@ -1,8 +1,8 @@
+import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
-import uuid
 
 import pytest
 

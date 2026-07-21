@@ -121,9 +121,10 @@ def _repair_almost_json(text: str) -> str:
 
 def _unescape_json_string(value: str) -> str:
     try:
-        return json.loads(f'"{value}"')
+        loaded = json.loads(f'"{value}"')
     except json.JSONDecodeError:
         return value.replace('\\"', '"').replace("\\n", "\n").strip()
+    return loaded if isinstance(loaded, str) else value
 
 
 def _salvage_summary_fields(text: str) -> dict[str, Any] | None:

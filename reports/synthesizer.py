@@ -27,14 +27,11 @@ class OpenAIChatCompletions(Protocol):
     async def create(self, **kwargs: Any) -> Any: ...
 
 
-class OpenAIChatNamespace(Protocol):
-    @property
-    def completions(self) -> OpenAIChatCompletions: ...
-
-
 class OpenAIClient(Protocol):
+    """Structural type for the OpenAI SDK chat client (property or attribute)."""
+
     @property
-    def chat(self) -> OpenAIChatNamespace: ...
+    def chat(self) -> Any: ...
 
 
 class ReportSynthesizer(ABC):
