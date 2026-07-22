@@ -18,6 +18,15 @@ from daily_reports.schemas import (
     DailyMeetingReportResponse,
 )
 from daily_reports.service import DailyMeetingReportService, run_daily_report_generation
+from tts.dependencies import build_tts_service
+from tts.errors import (
+    EmptyTextError,
+    InvalidSpeechSpeedError,
+    SpeechSynthesisFailedError,
+    TextTooLongError,
+    TTSConfigurationError,
+)
+from tts.models import MAX_SPEECH_SPEED, MIN_SPEECH_SPEED
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +48,21 @@ def _set_report_status(response: Response, status_value: str) -> None:
         response.status_code = status.HTTP_202_ACCEPTED
     else:
         response.status_code = status.HTTP_200_OK
+
+
+def _speech_http_error(exc: Exception) -> HTTPException:
+    if isinstance(
+        exc,
+        (EmptyTextError, TextTooLongError, InvalidSpeechSpeedError),
+    ):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        )
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="failed to synthesize speech",
+    )
 
 
 @router.post(
@@ -110,3 +134,62 @@ async def get_daily_meeting_report(
         )
     _set_report_status(response, report.status)
     return DailyMeetingReportResponse.from_report(report)
+
+
+@router.get("/{report_id}/speech")
+async def get_daily_meeting_report_speech(
+    report_id: uuid.UUID,
+    settings: SettingsDep,
+    speed: Annotated[
+        float,
+        Query(ge=MIN_SPEECH_SPEED, le=MAX_SPEECH_SPEED),
+    ] = 1.0,
+    current_user: User = Depends(get_current_user),
+    service: DailyMeetingReportService = Depends(get_daily_report_service),
+) -> Response:
+    try:
+        report = await service.get(current_user.user_id, report_id)
+    except SQLAlchemyError as exc:
+        logger.error("failed to get daily meeting report for speech", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="failed to get daily meeting report",
+        ) from exc
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="daily meeting report not found",
+        )
+    if report.status in ("pending", "running"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="daily meeting report is still generating",
+        )
+    if report.status == "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=report.error or "daily meeting report generation failed",
+        )
+
+    try:
+        tts_service = build_tts_service(settings)
+    except TTSConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="text-to-speech is not available",
+        ) from exc
+
+    try:
+        audio = await tts_service.synthesize(
+            text=report.text or "",
+            speed=speed,
+        )
+    except (
+        EmptyTextError,
+        TextTooLongError,
+        InvalidSpeechSpeedError,
+        SpeechSynthesisFailedError,
+    ) as exc:
+        raise _speech_http_error(exc) from exc
+
+    return Response(content=audio.data, media_type=audio.media_type)

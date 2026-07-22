@@ -12,6 +12,7 @@ from core.config import Settings, get_settings
 from daily_reports.dependencies import get_daily_report_service
 from daily_reports.models import DailyReportStatus, StoredDailyReport
 from main import app
+from tts.models import SynthesizedAudio
 
 REPORT_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
 REPORT_DATE = date(2026, 7, 21)
@@ -49,6 +50,49 @@ class _FakeDailyService:
     ) -> None:
         self.request_report = AsyncMock(return_value=(report, should_generate))
         self.get = AsyncMock(return_value=report)
+
+
+class _FakeTTSService:
+    def __init__(
+        self,
+        *,
+        audio: SynthesizedAudio | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._audio = audio
+        self._error = error
+        self.calls: list[dict[str, object]] = []
+
+    async def synthesize(
+        self,
+        *,
+        text: str,
+        speed: float | None = None,
+    ) -> SynthesizedAudio:
+        self.calls.append({"text": text, "speed": speed})
+        if self._error is not None:
+            raise self._error
+        assert self._audio is not None
+        return self._audio
+
+
+def _patch_tts(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    service: _FakeTTSService | None = None,
+    config_error: Exception | None = None,
+) -> None:
+    def fake_build_tts_service(settings: Settings) -> _FakeTTSService:
+        if config_error is not None:
+            raise config_error
+        assert service is not None
+        return service
+
+    monkeypatch.setattr(
+        sys.modules["daily_reports.router"],
+        "build_tts_service",
+        fake_build_tts_service,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -180,3 +224,152 @@ def test_get_missing_report_returns_404() -> None:
     response = client.get(f"/daily-meeting-reports/{REPORT_ID}")
 
     assert response.status_code == 404
+
+
+def test_get_daily_report_speech_returns_audio_with_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _stored("ready", text="תדריך יומי קצר.")
+    audio = SynthesizedAudio(
+        data=b"fake-audio-bytes",
+        media_type="audio/mpeg",
+        file_extension="mp3",
+    )
+    tts = _FakeTTSService(audio=audio)
+    _patch_tts(monkeypatch, service=tts)
+    client = _client(_FakeDailyService(report))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 200
+    assert response.content == b"fake-audio-bytes"
+    assert response.headers["content-type"] == "audio/mpeg"
+    assert tts.calls == [
+        {
+            "text": "תדריך יומי קצר.",
+            "speed": 1.0,
+        }
+    ]
+
+
+def test_get_daily_report_speech_forwards_speed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _stored("ready", text="תדריך יומי.")
+    audio = SynthesizedAudio(
+        data=b"audio",
+        media_type="audio/wav",
+        file_extension="wav",
+    )
+    tts = _FakeTTSService(audio=audio)
+    _patch_tts(monkeypatch, service=tts)
+    client = _client(_FakeDailyService(report))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech?speed=0.8")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+    assert tts.calls == [{"text": "תדריך יומי.", "speed": 0.8}]
+
+
+@pytest.mark.parametrize("report_status", ["pending", "running"])
+def test_get_daily_report_speech_generating_returns_409(
+    report_status: DailyReportStatus,
+) -> None:
+    client = _client(_FakeDailyService(_stored(report_status)))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "daily meeting report is still generating"
+
+
+def test_get_daily_report_speech_failed_returns_409() -> None:
+    client = _client(_FakeDailyService(_stored("failed", error="generation failed")))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "generation failed"
+
+
+def test_get_daily_report_speech_missing_returns_404() -> None:
+    client = _client(_FakeDailyService(None))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "daily meeting report not found"
+
+
+def test_get_daily_report_speech_tts_disabled_returns_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tts.errors import TTSConfigurationError
+
+    _patch_tts(monkeypatch, config_error=TTSConfigurationError("TTS is disabled"))
+    client = _client(_FakeDailyService(_stored("ready", text="תדריך")))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "text-to-speech is not available"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param("empty", id="empty-text"),
+        pytest.param("too-long", id="text-too-long"),
+        pytest.param("speed", id="invalid-speed"),
+    ],
+)
+def test_get_daily_report_speech_invalid_request_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+    error: str,
+) -> None:
+    from tts.errors import (
+        EmptyTextError,
+        InvalidSpeechSpeedError,
+        TextTooLongError,
+    )
+
+    errors: dict[str, Exception] = {
+        "empty": EmptyTextError("text must not be empty"),
+        "too-long": TextTooLongError(6_000, 5_000),
+        "speed": InvalidSpeechSpeedError(2.0, 0.7, 1.2),
+    }
+    _patch_tts(monkeypatch, service=_FakeTTSService(error=errors[error]))
+    client = _client(_FakeDailyService(_stored("ready", text="תדריך")))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 422
+
+
+def test_get_daily_report_speech_synthesis_failure_returns_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tts.errors import SpeechSynthesisFailedError
+
+    _patch_tts(
+        monkeypatch,
+        service=_FakeTTSService(error=SpeechSynthesisFailedError("provider failed")),
+    )
+    client = _client(_FakeDailyService(_stored("ready", text="תדריך")))
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "failed to synthesize speech"
+
+
+@pytest.mark.parametrize("query", ["speed=0.69", "speed=1.21"])
+def test_get_daily_report_speech_rejects_invalid_query(query: str) -> None:
+    service = _FakeDailyService(_stored("ready", text="תדריך"))
+    client = _client(service)
+
+    response = client.get(f"/daily-meeting-reports/{REPORT_ID}/speech?{query}")
+
+    assert response.status_code == 422
+    service.get.assert_not_awaited()
