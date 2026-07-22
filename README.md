@@ -55,7 +55,8 @@ than silently downgrading to Whisper.
 
 ## Session summaries
 
-Session summaries and next-meeting prep reports share `SUMMARY_BACKEND`:
+Session summaries, next-meeting prep reports, and daily meeting reports share
+`SUMMARY_BACKEND`:
 
 | Backend | Value | Notes |
 | --- | --- | --- |

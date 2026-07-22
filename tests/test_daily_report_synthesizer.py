@@ -1,15 +1,19 @@
 import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
 from ollama import ChatResponse, Message
 
+from core.config import Settings
 from daily_reports.models import DailyMeetingContext, DailyReportFailedError
+from daily_reports.service import build_daily_synthesizer
 from daily_reports.synthesizer import (
     OllamaDailyReportSynthesizer,
+    OpenAIDailyReportSynthesizer,
     format_meeting_context_for_prompt,
 )
 
@@ -67,6 +71,33 @@ class _FakeOllamaClient:
         self.format = format
         self.options = options
         return ChatResponse(message=Message(role="assistant", content=self.contents.pop(0)))
+
+
+class _FakeOpenAIClient:
+    def __init__(
+        self,
+        *,
+        contents: Sequence[str | None] = ('{"text": "כדאי לזכור את השיפור בוויסות"}',),
+        error: Exception | None = None,
+    ) -> None:
+        self.contents = list(contents)
+        self.error = error
+        self.calls: list[dict[str, Any]] = []
+        self.chat = MagicMock()
+        self.chat.completions = MagicMock()
+        self.chat.completions.create = self._create
+
+    async def _create(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        message = MagicMock()
+        message.content = self.contents.pop(0)
+        choice = MagicMock()
+        choice.message = message
+        response = MagicMock()
+        response.choices = [choice]
+        return response
 
 
 @pytest.mark.anyio
@@ -180,3 +211,106 @@ async def test_synthesizer_rejects_missing_or_empty_content(content: str | None)
             meetings=[_context()],
             time_zone=ZoneInfo("Asia/Jerusalem"),
         )
+
+
+@pytest.mark.anyio
+async def test_openai_synthesizer_returns_daily_report_with_model() -> None:
+    client = _FakeOpenAIClient()
+    synthesizer = OpenAIDailyReportSynthesizer(client=client, model="gpt-4o")
+
+    generated = await synthesizer.synthesize(
+        meetings=[_context()],
+        time_zone=ZoneInfo("Asia/Jerusalem"),
+    )
+
+    assert generated.text == (
+        "היום ביומן שלך מתוכננת פגישה אחת. "
+        "בשעה 09:30 תתקיים הפגישה שלך עם דנה. כדאי לזכור את השיפור בוויסות."
+    )
+    assert generated.model == "gpt-4o"
+    assert client.calls[0]["model"] == "gpt-4o"
+    assert client.calls[0]["temperature"] == 0
+    assert "מצב יציב" in client.calls[0]["messages"][1]["content"]
+    assert "דנה" not in client.calls[0]["messages"][1]["content"]
+
+
+@pytest.mark.anyio
+async def test_openai_synthesizer_wraps_api_errors() -> None:
+    synthesizer = OpenAIDailyReportSynthesizer(
+        client=_FakeOpenAIClient(error=RuntimeError("rate limited")),
+        model="gpt-4o",
+    )
+
+    with pytest.raises(DailyReportFailedError, match="daily report generation failed"):
+        await synthesizer.synthesize(
+            meetings=[_context()],
+            time_zone=ZoneInfo("Asia/Jerusalem"),
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", [None, "", "   "])
+async def test_openai_synthesizer_rejects_missing_or_empty_content(
+    content: str | None,
+) -> None:
+    synthesizer = OpenAIDailyReportSynthesizer(
+        client=_FakeOpenAIClient(contents=(content,)),
+        model="gpt-4o",
+    )
+
+    with pytest.raises(DailyReportFailedError, match="empty daily report"):
+        await synthesizer.synthesize(
+            meetings=[_context()],
+            time_zone=ZoneInfo("Asia/Jerusalem"),
+        )
+
+
+def test_build_daily_synthesizer_openai_requires_api_key() -> None:
+    settings = Settings(
+        summary_backend="openai",
+        openai_api_key=None,
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        build_daily_synthesizer(settings)
+
+
+def test_build_daily_synthesizer_selects_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_client = MagicMock()
+    fake_class = MagicMock(return_value=fake_client)
+    monkeypatch.setattr("openai.AsyncOpenAI", fake_class)
+    settings = Settings(
+        summary_backend="openai",
+        openai_api_key="sk-test",
+        openai_model="gpt-4o",
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+
+    synthesizer = build_daily_synthesizer(settings)
+
+    assert isinstance(synthesizer, OpenAIDailyReportSynthesizer)
+    fake_class.assert_called_once_with(api_key="sk-test")
+
+
+def test_build_daily_synthesizer_selects_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_client = MagicMock()
+    fake_class = MagicMock(return_value=fake_client)
+    monkeypatch.setattr("ollama.AsyncClient", fake_class)
+    settings = Settings(
+        summary_backend="ollama",
+        ollama_host="http://localhost:11434",
+        ollama_model="llama3.1:latest",
+        enable_security=False,
+        auth_token_secret_key=None,
+        database_url=None,
+    )
+
+    synthesizer = build_daily_synthesizer(settings)
+
+    assert isinstance(synthesizer, OllamaDailyReportSynthesizer)
+    fake_class.assert_called_once()
