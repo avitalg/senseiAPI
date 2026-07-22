@@ -15,7 +15,11 @@ from daily_reports.models import (
 )
 from daily_reports.prompt import DAILY_REPORT_PROMPT_VERSION
 from daily_reports.repository import DailyMeetingReportRepository
-from daily_reports.synthesizer import DailyReportSynthesizer, OllamaDailyReportSynthesizer
+from daily_reports.synthesizer import (
+    DailyReportSynthesizer,
+    OllamaDailyReportSynthesizer,
+    OpenAIDailyReportSynthesizer,
+)
 from patients.repository import PatientRepository
 from reports.models import StoredReport
 from reports.repository import NextMeetingReportRepository
@@ -31,6 +35,17 @@ MEETING_REPORT_WAIT_GRACE_SECONDS = 30.0
 
 
 def build_daily_synthesizer(settings: Settings) -> DailyReportSynthesizer:
+    """Build daily synthesis with the same SUMMARY_BACKEND as source reports."""
+    if settings.summary_backend == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required when SUMMARY_BACKEND=openai")
+        from openai import AsyncOpenAI
+
+        return OpenAIDailyReportSynthesizer(
+            client=AsyncOpenAI(api_key=settings.openai_api_key),
+            model=settings.openai_model,
+        )
+
     from ollama import AsyncClient
 
     return OllamaDailyReportSynthesizer(
