@@ -215,9 +215,7 @@ def test_report_to_speech_text_separates_sections_with_blank_line() -> None:
     text = report_to_speech_text(report)
 
     assert text == (
-        "מצב יציב.\n\n"
-        "שינויים ומגמות: שיפור בוויסות.\n\n"
-        "נושאים פתוחים לפגישה הבאה: לחזור לשינה."
+        "מצב יציב.\n\nשינויים ומגמות: שיפור בוויסות.\n\nנושאים פתוחים לפגישה הבאה: לחזור לשינה."
     )
 
 

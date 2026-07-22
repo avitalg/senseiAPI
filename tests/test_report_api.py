@@ -401,7 +401,11 @@ def test_meeting_patient_mismatch_returns_404() -> None:
 
 def test_get_meeting_report_speech_returns_audio(monkeypatch: pytest.MonkeyPatch) -> None:
     report = _stored("ready", intro="סקירה", changes=["א"], open_topics=["ב"])
-    audio = SynthesizedAudio(data=b"fake-audio-bytes", media_type="audio/mpeg", file_extension="mp3")
+    audio = SynthesizedAudio(
+        data=b"fake-audio-bytes",
+        media_type="audio/mpeg",
+        file_extension="mp3",
+    )
     tts = _FakeTTSService(audio=audio)
     _patch_tts(monkeypatch, service=tts)
     client = _client(report=report)

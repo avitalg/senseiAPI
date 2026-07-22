@@ -256,7 +256,12 @@ async def get_meeting_report_speech(
 
     try:
         audio = await tts_service.synthesize(text=text, speed=speed)
-    except (EmptyTextError, TextTooLongError, InvalidSpeechSpeedError, SpeechSynthesisFailedError) as exc:
+    except (
+        EmptyTextError,
+        TextTooLongError,
+        InvalidSpeechSpeedError,
+        SpeechSynthesisFailedError,
+    ) as exc:
         raise _speech_http_error(exc) from exc
 
     return Response(content=audio.data, media_type=audio.media_type)
