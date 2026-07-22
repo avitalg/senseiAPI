@@ -30,7 +30,10 @@ def build_synthesizer(settings: Settings) -> ReportSynthesizer:
         from openai import AsyncOpenAI
 
         return OpenAIReportSynthesizer(
-            client=AsyncOpenAI(api_key=settings.openai_api_key),
+            client=AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+            ),
             model=settings.openai_model,
         )
 

@@ -42,7 +42,10 @@ def build_daily_synthesizer(settings: Settings) -> DailyReportSynthesizer:
         from openai import AsyncOpenAI
 
         return OpenAIDailyReportSynthesizer(
-            client=AsyncOpenAI(api_key=settings.openai_api_key),
+            client=AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+            ),
             model=settings.openai_model,
         )
 

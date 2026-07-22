@@ -65,7 +65,10 @@ def get_assistant_service(
         allow_all_gets=settings.assistant_allow_all_gets,
     )
     client = OpenAIAssistant(
-        client=AsyncOpenAI(api_key=settings.openai_api_key),
+        client=AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+        ),
         model=settings.openai_model,
         tools=tools,
         max_output_tokens=settings.assistant_max_output_tokens,

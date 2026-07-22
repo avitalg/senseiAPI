@@ -15,7 +15,10 @@ def get_summarizer(settings: Settings) -> Summarizer:
         from openai import AsyncOpenAI
 
         return OpenAISummarizer(
-            client=AsyncOpenAI(api_key=settings.openai_api_key),
+            client=AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+            ),
             model=settings.openai_model,
         )
 

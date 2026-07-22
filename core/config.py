@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     assistant_enabled: bool = True
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    # OpenAI base url, default is None, which means default OpenAI url
+    openai_base_url: str | None = None
     # Base URL the assistant's tools call back into for context (self-host).
     assistant_self_base_url: str = "http://localhost:8000"
     # When true, the assistant's http_get tool may GET ANY endpoint on this API (still
