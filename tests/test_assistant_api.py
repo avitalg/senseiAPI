@@ -1,12 +1,20 @@
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
 
-from assistant.client import AssistantClient, AssistantError, StreamEvent, TextChunk
+from assistant.client import (
+    AssistantClient,
+    AssistantError,
+    OpenAIAssistant,
+    StreamEvent,
+    TextChunk,
+)
 from assistant.dependencies import get_assistant_service
 from assistant.service import AssistantService
+from assistant.tools import Tools
 from assistant.tracing import ChatTrace, Tracer
 from auth.router import TEST_USER
 from core.config import Settings, get_settings
@@ -113,6 +121,112 @@ def test_chat_traces_with_the_current_user_and_conversation_id() -> None:
 
     assert res.status_code == 200
     assert tracer.calls == [(str(TEST_USER.user_id), "conv-1")]
+
+
+# --- End-to-end: the REAL tool loop through the endpoint (discover runs once) -------
+#
+# The fakes above replace the whole client, so they never exercise the discover_api
+# tool loop. These wire the real OpenAIAssistant to a fake OpenAI SDK and drive it
+# through POST /assistant/chat, so the full path — request body → to_openai_messages
+# replay → tool loop → the messages/tools sent to OpenAI — is covered deterministically.
+
+
+class _FakeSDKStream:
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
+        self._chunks = chunks
+
+    def __aiter__(self) -> "_FakeSDKStream":
+        self._it = iter(self._chunks)
+        return self
+
+    async def __anext__(self) -> SimpleNamespace:
+        try:
+            return next(self._it)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+    async def close(self) -> None: ...
+
+
+class _FakeSDKCompletions:
+    def __init__(self, rounds: list[list[SimpleNamespace]]) -> None:
+        self._rounds = list(rounds)
+        self.calls: list[dict[str, Any]] = []
+
+    async def create(self, **kwargs: Any) -> _FakeSDKStream:
+        self.calls.append(kwargs)
+        return _FakeSDKStream(self._rounds.pop(0))
+
+
+class _FakeSDK:
+    def __init__(self, rounds: list[list[SimpleNamespace]]) -> None:
+        self.completions = _FakeSDKCompletions(rounds)
+        self.chat = SimpleNamespace(completions=self.completions)
+
+
+def _text_chunk(content: str | None, finish: str | None = None) -> SimpleNamespace:
+    delta = SimpleNamespace(content=content, tool_calls=None)
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish)])
+
+
+def _tool_chunk(call_id: str, name: str) -> SimpleNamespace:
+    fn = SimpleNamespace(name=name, arguments="{}")
+    tc = SimpleNamespace(index=0, id=call_id, function=fn)
+    delta = SimpleNamespace(content=None, tool_calls=[tc])
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason="tool_calls")])
+
+
+def test_discover_api_runs_once_across_turns_through_the_real_endpoint() -> None:
+    async def _fetch(
+        url: str, *, headers: dict[str, str], params: dict[str, str] | None = None
+    ) -> tuple[int, Any]:
+        return 200, {"paths": {"/assistant/context/agenda": {"get": {"summary": "a"}}}}
+
+    # Turn 1: model discovers, then answers. Turn 2: answers straight away.
+    sdk = _FakeSDK(
+        [
+            [_tool_chunk("c1", "discover_api")],
+            [_text_chunk("מצאתי", finish="stop")],
+            [_text_chunk("הנה מחר", finish="stop")],
+        ]
+    )
+    assistant = OpenAIAssistant(
+        client=sdk, model="gpt-4o", tools=Tools(base_url="http://api", fetch=_fetch)
+    )
+    app.dependency_overrides[get_assistant_service] = lambda: AssistantService(client=assistant)
+    client = TestClient(app)
+
+    turn1 = {"messages": [{"role": "user", "parts": [{"type": "text", "text": "מי הבא?"}]}]}
+    assert client.post("/assistant/chat", json=turn1).status_code == 200
+
+    # Turn 2 re-sends the conversation, including the assistant's discover_api tool part.
+    turn2 = {
+        "messages": [
+            {"role": "user", "parts": [{"type": "text", "text": "מי הבא?"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-discover_api",
+                        "toolCallId": "c1",
+                        "state": "output-available",
+                        "input": {},
+                        "output": {"endpoints": [{"path": "/assistant/context/agenda"}]},
+                    },
+                    {"type": "text", "text": "מצאתי"},
+                ],
+            },
+            {"role": "user", "parts": [{"type": "text", "text": "ומחר?"}]},
+        ]
+    }
+    assert client.post("/assistant/chat", json=turn2).status_code == 200
+
+    offered = [
+        {t["function"]["name"] for t in call.get("tools", [])} for call in sdk.completions.calls
+    ]
+    assert "discover_api" in offered[0]  # turn 1 could discover
+    assert "discover_api" not in offered[-1]  # turn 2 must not — already in context
+    assert "http_get" in offered[-1]  # but can still fetch, reusing the endpoints
 
 
 def test_chat_returns_503_when_the_assistant_is_not_configured() -> None:

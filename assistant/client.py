@@ -27,6 +27,21 @@ logger = logging.getLogger(__name__)
 # self-correct a fumbled call before we force it to answer.
 _MAX_TOOL_ROUNDS = 6
 
+# The one tool that only ever needs to run once per conversation: the OpenAPI surface is
+# stable, so its result stays valid for the whole chat.
+_DISCOVER_TOOL = "discover_api"
+
+
+def _already_discovered(messages: list[dict[str, Any]]) -> bool:
+    """True if the conversation already contains a ``discover_api`` call — replayed from
+    a prior turn or made earlier this turn. Once it has, we stop offering the tool so the
+    model reuses the endpoints already in context instead of re-discovering every prompt."""
+    return any(
+        (call.get("function") or {}).get("name") == _DISCOVER_TOOL
+        for message in messages
+        for call in message.get("tool_calls") or []
+    )
+
 
 @dataclass(frozen=True)
 class TextChunk:
@@ -104,9 +119,15 @@ class OpenAIAssistant(AssistantClient):
 
     async def stream(self, messages: Sequence[dict[str, Any]]) -> AsyncIterator[StreamEvent]:
         convo: list[dict[str, Any]] = list(messages)
-        specs = self._tools.specs() if self._tools else []
+        all_specs = self._tools.specs() if self._tools else []
 
         for _round in range(_MAX_TOOL_ROUNDS + 1):
+            # Drop discover_api once the conversation already holds a discovery, so it
+            # runs at most once per conversation (the endpoints are already in context).
+            specs = all_specs
+            if all_specs and _already_discovered(convo):
+                specs = [s for s in all_specs if s["function"]["name"] != _DISCOVER_TOOL]
+
             kwargs: dict[str, Any] = {"model": self._model, "messages": convo, "stream": True}
             # Offer tools on every round except the last: on the final round we drop them
             # so the model MUST answer from what it already fetched, instead of starting a

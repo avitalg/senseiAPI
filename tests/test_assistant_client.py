@@ -170,6 +170,47 @@ async def test_passes_max_output_tokens_when_set() -> None:
 
 
 @pytest.mark.anyio
+async def test_offers_discover_api_on_a_fresh_conversation() -> None:
+    client = _FakeOpenAI([[_text("hi", finish="stop")]])
+    assistant = OpenAIAssistant(client=client, model="gpt-4o", tools=_fake_tools())
+
+    await _collect(assistant)
+
+    offered = [t["function"]["name"] for t in client.completions.calls[0]["tools"]]
+    assert "discover_api" in offered  # nothing discovered yet → the tool is available
+
+
+@pytest.mark.anyio
+async def test_stops_offering_discover_api_once_already_discovered() -> None:
+    # A conversation whose replayed history already holds a discover_api call: the tool
+    # must not be offered again, so discovery runs at most once per conversation.
+    history = [
+        {"role": "user", "content": "מי הבא?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "discover_api", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": '{"endpoints": []}'},
+        {"role": "user", "content": "ומחר?"},
+    ]
+    client = _FakeOpenAI([[_text("מחר יש פגישה", finish="stop")]])
+    assistant = OpenAIAssistant(client=client, model="gpt-4o", tools=_fake_tools())
+
+    _ = [e async for e in assistant.stream(history)]
+
+    offered = [t["function"]["name"] for t in client.completions.calls[0]["tools"]]
+    assert "discover_api" not in offered  # already discovered → suppressed
+    assert "http_get" in offered  # http_get still available to reuse the endpoints
+
+
+@pytest.mark.anyio
 async def test_forces_a_final_answer_after_the_tool_round_cap() -> None:
     # The model keeps calling a tool; on the final round we drop tools so it MUST answer
     # from what it fetched, instead of stranding the user with no reply.
