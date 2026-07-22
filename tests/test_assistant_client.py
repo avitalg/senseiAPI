@@ -184,7 +184,7 @@ async def test_offers_discover_api_on_a_fresh_conversation() -> None:
 async def test_stops_offering_discover_api_once_already_discovered() -> None:
     # A conversation whose replayed history already holds a discover_api call: the tool
     # must not be offered again, so discovery runs at most once per conversation.
-    history = [
+    history: list[dict[str, Any]] = [
         {"role": "user", "content": "מי הבא?"},
         {
             "role": "assistant",
@@ -214,7 +214,7 @@ async def test_stops_offering_discover_api_once_already_discovered() -> None:
 async def test_still_offers_discover_api_after_a_failed_discovery() -> None:
     # A discover_api call whose result was an error must NOT lock the tool out — else the
     # model is stranded with http_get and no valid paths. It stays available to retry.
-    history = [
+    history: list[dict[str, Any]] = [
         {"role": "user", "content": "מי הבא?"},
         {
             "role": "assistant",

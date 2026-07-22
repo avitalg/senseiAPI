@@ -1,3 +1,5 @@
+from typing import Any
+
 from assistant.tokens import trim_to_token_budget
 
 
@@ -6,7 +8,7 @@ def _count(text: str) -> int:
     return len(text)
 
 
-def _msg(role: str, char: str, n: int) -> dict[str, str]:
+def _msg(role: str, char: str, n: int) -> dict[str, Any]:
     return {"role": role, "content": char * n}
 
 
@@ -39,7 +41,7 @@ def test_keeps_latest_message_even_if_it_exceeds_the_budget() -> None:
     assert trimmed[-1]["content"] == "x" * 100  # never drop the live turn
 
 
-def _tool_call_msg(call_id: str, args_len: int) -> dict[str, object]:
+def _tool_call_msg(call_id: str, args_len: int) -> dict[str, Any]:
     return {
         "role": "assistant",
         "content": None,
