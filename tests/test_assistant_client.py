@@ -211,6 +211,35 @@ async def test_stops_offering_discover_api_once_already_discovered() -> None:
 
 
 @pytest.mark.anyio
+async def test_still_offers_discover_api_after_a_failed_discovery() -> None:
+    # A discover_api call whose result was an error must NOT lock the tool out — else the
+    # model is stranded with http_get and no valid paths. It stays available to retry.
+    history = [
+        {"role": "user", "content": "מי הבא?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "discover_api", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": '{"error": "could not load the API"}'},
+        {"role": "user", "content": "ומחר?"},
+    ]
+    client = _FakeOpenAI([[_text("בסדר", finish="stop")]])
+    assistant = OpenAIAssistant(client=client, model="gpt-4o", tools=_fake_tools())
+
+    _ = [e async for e in assistant.stream(history)]
+
+    offered = [t["function"]["name"] for t in client.completions.calls[0]["tools"]]
+    assert "discover_api" in offered  # failed discovery → still offered so it can retry
+
+
+@pytest.mark.anyio
 async def test_forces_a_final_answer_after_the_tool_round_cap() -> None:
     # The model keeps calling a tool; on the final round we drop tools so it MUST answer
     # from what it fetched, instead of stranding the user with no reply.
