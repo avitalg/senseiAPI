@@ -33,14 +33,29 @@ _DISCOVER_TOOL = "discover_api"
 
 
 def _already_discovered(messages: list[dict[str, Any]]) -> bool:
-    """True if the conversation already contains a ``discover_api`` call — replayed from
-    a prior turn or made earlier this turn. Once it has, we stop offering the tool so the
-    model reuses the endpoints already in context instead of re-discovering every prompt."""
-    return any(
-        (call.get("function") or {}).get("name") == _DISCOVER_TOOL
+    """True if the conversation already holds a **successful** ``discover_api`` result —
+    replayed from a prior turn or produced earlier this turn. Once it does, we stop
+    offering the tool so the model reuses those endpoints instead of re-discovering every
+    prompt. A *failed* discovery does not count: suppressing the tool after a failure
+    would strand the model with ``http_get`` and no valid paths, so it may retry."""
+    discover_ids = {
+        call.get("id")
         for message in messages
         for call in message.get("tool_calls") or []
-    )
+        if (call.get("function") or {}).get("name") == _DISCOVER_TOOL
+    }
+    if not discover_ids:
+        return False
+    for message in messages:
+        if message.get("role") != "tool" or message.get("tool_call_id") not in discover_ids:
+            continue
+        try:
+            body = json.loads(message.get("content") or "")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(body, dict) and "endpoints" in body:  # a successful discovery
+            return True
+    return False
 
 
 @dataclass(frozen=True)
