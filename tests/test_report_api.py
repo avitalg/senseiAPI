@@ -181,8 +181,10 @@ class _FakeTTSService:
     ) -> None:
         self._audio = audio
         self._error = error
+        self.calls: list[dict[str, object]] = []
 
-    async def synthesize(self, *, text: str) -> SynthesizedAudio:
+    async def synthesize(self, *, text: str, speed: float | None = None) -> SynthesizedAudio:
+        self.calls.append({"text": text, "speed": speed})
         if self._error is not None:
             raise self._error
         assert self._audio is not None
@@ -400,7 +402,8 @@ def test_meeting_patient_mismatch_returns_404() -> None:
 def test_get_meeting_report_speech_returns_audio(monkeypatch: pytest.MonkeyPatch) -> None:
     report = _stored("ready", intro="סקירה", changes=["א"], open_topics=["ב"])
     audio = SynthesizedAudio(data=b"fake-audio-bytes", media_type="audio/mpeg", file_extension="mp3")
-    _patch_tts(monkeypatch, service=_FakeTTSService(audio=audio))
+    tts = _FakeTTSService(audio=audio)
+    _patch_tts(monkeypatch, service=tts)
     client = _client(report=report)
 
     res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
@@ -408,6 +411,50 @@ def test_get_meeting_report_speech_returns_audio(monkeypatch: pytest.MonkeyPatch
     assert res.status_code == 200
     assert res.content == b"fake-audio-bytes"
     assert res.headers["content-type"] == "audio/mpeg"
+    assert tts.calls == [
+        {
+            "text": "סקירה.\n\nשינויים ומגמות: א.\n\nנושאים פתוחים לפגישה הבאה: ב.",
+            "speed": None,
+        }
+    ]
+
+
+def test_get_meeting_report_speech_forwards_speed(monkeypatch: pytest.MonkeyPatch) -> None:
+    report = _stored("ready", intro="סקירה")
+    audio = SynthesizedAudio(data=b"audio", media_type="audio/wav", file_extension="wav")
+    tts = _FakeTTSService(audio=audio)
+    _patch_tts(monkeypatch, service=tts)
+    client = _client(report=report)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech?speed=0.8")
+
+    assert res.status_code == 200
+    assert tts.calls == [{"text": "סקירה.", "speed": 0.8}]
+
+
+def test_get_meeting_report_speech_invalid_speed_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tts.errors import InvalidSpeechSpeedError
+
+    fake = _FakeTTSService(error=InvalidSpeechSpeedError(2.0, 0.7, 1.2))
+    _patch_tts(monkeypatch, service=fake)
+    client = _client(report=_stored("ready", intro="סקירה"))
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech")
+
+    assert res.status_code == 422
+
+
+@pytest.mark.parametrize("query", ["speed=0.69", "speed=1.21"])
+def test_get_meeting_report_speech_rejects_invalid_query_speed(query: str) -> None:
+    svc = _FakeReportService(_stored("ready", intro="סקירה"))
+    client = _client(report=_stored("ready", intro="סקירה"), service=svc)
+
+    res = client.get(f"/patients/{PATIENT_ID}/meeting-reports/{MEETING_ID}/speech?{query}")
+
+    assert res.status_code == 422
+    svc.get.assert_not_awaited()
 
 
 def test_get_meeting_report_speech_pending_returns_409() -> None:

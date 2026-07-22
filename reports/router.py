@@ -1,8 +1,9 @@
 import logging
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from auth.router import get_current_user
@@ -22,10 +23,12 @@ from summaries.repository import SummaryRepository
 from tts.dependencies import build_tts_service
 from tts.errors import (
     EmptyTextError,
+    InvalidSpeechSpeedError,
     SpeechSynthesisFailedError,
     TextTooLongError,
     TTSConfigurationError,
 )
+from tts.models import MAX_SPEECH_SPEED, MIN_SPEECH_SPEED
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +67,7 @@ def _meeting_http_error(exc: Exception) -> HTTPException:
 
 
 def _speech_http_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, (EmptyTextError, TextTooLongError)):
+    if isinstance(exc, (EmptyTextError, TextTooLongError, InvalidSpeechSpeedError)):
         return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
@@ -209,6 +212,10 @@ async def get_meeting_report_speech(
     patient_id: uuid.UUID,
     meeting_id: uuid.UUID,
     settings: SettingsDep,
+    speed: Annotated[
+        float | None,
+        Query(ge=MIN_SPEECH_SPEED, le=MAX_SPEECH_SPEED),
+    ] = None,
     current_user: User = Depends(get_current_user),
     patients: PatientService = Depends(get_patient_service),
     service: NextMeetingReportService = Depends(get_report_service),
@@ -248,8 +255,8 @@ async def get_meeting_report_speech(
         ) from exc
 
     try:
-        audio = await tts_service.synthesize(text=text)
-    except (EmptyTextError, TextTooLongError, SpeechSynthesisFailedError) as exc:
+        audio = await tts_service.synthesize(text=text, speed=speed)
+    except (EmptyTextError, TextTooLongError, InvalidSpeechSpeedError, SpeechSynthesisFailedError) as exc:
         raise _speech_http_error(exc) from exc
 
     return Response(content=audio.data, media_type=audio.media_type)
