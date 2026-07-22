@@ -294,7 +294,7 @@ def test_build_daily_synthesizer_selects_openai(monkeypatch: pytest.MonkeyPatch)
     synthesizer = build_daily_synthesizer(settings)
 
     assert isinstance(synthesizer, OpenAIDailyReportSynthesizer)
-    fake_class.assert_called_once_with(api_key="sk-test")
+    fake_class.assert_called_once_with(api_key="sk-test", base_url=None)
 
 
 def test_build_daily_synthesizer_selects_ollama(monkeypatch: pytest.MonkeyPatch) -> None:

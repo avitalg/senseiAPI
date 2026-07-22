@@ -193,7 +193,7 @@ def test_get_summarizer_selects_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     summarizer = get_summarizer(settings)
     assert isinstance(summarizer, OpenAISummarizer)
-    fake_cls.assert_called_once_with(api_key="sk-test")
+    fake_cls.assert_called_once_with(api_key="sk-test", base_url=None)
 
 
 def test_get_summarizer_selects_ollama(monkeypatch: pytest.MonkeyPatch) -> None:

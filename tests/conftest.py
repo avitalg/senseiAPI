@@ -6,10 +6,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.config import Settings, get_settings
-from main import app
 from transcription.dependencies import get_transcriber
 from transcription.models import Transcript
 from transcription.transcriber import Transcriber
+
+# Keep the test process hermetic: ``main`` reads settings while it is imported to
+# configure CORS, so dotenv loading must be disabled before importing the app.
+# This mutates the model only inside pytest; normal application startup still uses
+# the ``env_file=".env"`` configuration declared in ``core.config``.
+Settings.model_config["env_file"] = None
+
+from main import app  # noqa: E402
 
 DEFAULT_TRANSCRIPT = "תמלול לדוגמה"
 
