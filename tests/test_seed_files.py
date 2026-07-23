@@ -42,7 +42,7 @@ def test_corpus_holds_exactly_the_expected_patients() -> None:
 
 
 def test_contacts_cover_every_seed_file() -> None:
-    assert EXPECTED_SLUGS <= set(CONTACTS)
+    assert set(CONTACTS) >= EXPECTED_SLUGS
 
 
 @pytest.mark.parametrize("path", _seed_files(), ids=lambda path: path.stem)
