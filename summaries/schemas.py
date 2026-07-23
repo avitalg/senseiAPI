@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from summaries.format import normalize_summary_output
 from summaries.models import StoredSummary, SummaryStatus
+from summaries.structure import StructuredSummary, parse_summary_sections
 
 
 class SummaryResponse(BaseModel):
@@ -12,6 +13,9 @@ class SummaryResponse(BaseModel):
     text: str | None = None
     model: str | None = None
     error: str | None = None
+    # The same content as `text`, split by heading. None when the text carries no
+    # recognisable section — `text` stays the source of truth either way.
+    summary: StructuredSummary | None = None
 
     @classmethod
     def from_summary(cls, summary: StoredSummary) -> Self:
@@ -26,4 +30,5 @@ class SummaryResponse(BaseModel):
             text=text,
             model=summary.model or None,
             error=summary.error,
+            summary=parse_summary_sections(text) if text else None,
         )

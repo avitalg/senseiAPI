@@ -17,6 +17,34 @@ def test_summary_json_to_markdown_uses_hebrew_headings() -> None:
     assert "- ויסות" in md
 
 
+def test_summary_json_to_markdown_renders_insights_first_when_present() -> None:
+    md = summary_json_to_markdown(
+        {
+            "insights": "החרדה מתעוררת סביב אירועי עבודה.",
+            "main_topics": "חרדה בעבודה",
+            "therapist_interventions": "שיקוף",
+            "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",
+            "follow_up": ["שינה"],
+        }
+    )
+    assert md.startswith("## תובנות מרכזיות\nהחרדה מתעוררת סביב אירועי עבודה.")
+    assert "## נושאים מרכזיים" in md
+
+
+def test_summary_json_to_markdown_omits_the_insights_heading_when_absent() -> None:
+    """Older rows and models that skip the key must not render an empty section."""
+    md = summary_json_to_markdown(
+        {
+            "main_topics": "חרדה בעבודה",
+            "therapist_interventions": "שיקוף",
+            "risk_signs": "לא נאמרו אמירות מפורשות של סיכון",
+            "follow_up": ["שינה"],
+        }
+    )
+    assert "תובנות מרכזיות" not in md
+    assert md.startswith("## נושאים מרכזיים")
+
+
 def test_summary_json_to_markdown_splits_prose_into_bullets() -> None:
     md = summary_json_to_markdown(
         {

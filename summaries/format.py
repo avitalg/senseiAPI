@@ -39,7 +39,7 @@ _SEGMENT_SPLIT = re.compile(r"(?<=[.!?])\s+|[\n;•·]+")
 _LEADING_MARKER = re.compile(r"^(?:[-*•·]\s*|\d+[.)]\s*)")
 
 
-def _as_bullet_items(value: Any) -> list[str]:
+def as_bullet_items(value: Any) -> list[str]:
     """Coerce a value into discrete items; keep list items, split prose strings."""
     if value is None:
         return []
@@ -59,14 +59,20 @@ def _bullet_block(items: list[str], empty: str) -> str:
 
 def summary_json_to_markdown(data: dict[str, Any]) -> str:
     """Render structured summary JSON into the Hebrew ## sections the UI expects."""
-    topics = _as_bullet_items(data.get("main_topics") or data.get("topics"))
-    interventions = _as_bullet_items(
+    insights = _as_str(data.get("insights"))
+    topics = as_bullet_items(data.get("main_topics") or data.get("topics"))
+    interventions = as_bullet_items(
         data.get("therapist_interventions") or data.get("interventions")
     )
     risk = _as_str(data.get("risk_signs") or data.get("risk"))
     follow = _as_str_list(data.get("follow_up") or data.get("followup"))
 
+    # Older rows (and models that skip the key) have no insights — omit the
+    # heading entirely rather than render an empty section.
+    insights_block = f"## תובנות מרכזיות\n{insights}\n\n" if insights else ""
+
     return (
+        f"{insights_block}"
         "## נושאים מרכזיים\n"
         f"{_bullet_block(topics, 'לא עלה בפגישה')}\n\n"
         "## התערבויות המטפל/ת\n"
@@ -80,6 +86,7 @@ def summary_json_to_markdown(data: dict[str, Any]) -> str:
 
 _SUMMARY_KEYS = frozenset(
     {
+        "insights",
         "main_topics",
         "topics",
         "therapist_interventions",
@@ -97,7 +104,8 @@ _MISSING_COMMA_SAME_LINE = re.compile(r'"\s+"')
 _TRAILING_COMMA = re.compile(r",\s*([}\]])")
 
 _STRING_FIELD = re.compile(
-    r'"(main_topics|topics|therapist_interventions|interventions|risk_signs|risk)"\s*:\s*"((?:\\.|[^"\\])*)"',
+    r'"(insights|main_topics|topics|therapist_interventions|interventions|risk_signs|risk)"'
+    r'\s*:\s*"((?:\\.|[^"\\])*)"',
     re.DOTALL,
 )
 _ARRAY_FIELD = re.compile(

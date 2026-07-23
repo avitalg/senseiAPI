@@ -121,6 +121,54 @@ def test_ready_summary_returns_200_with_the_text() -> None:
     assert body["status"] == "ready"
     assert body["text"] == HEBREW_SUMMARY
     assert body["model"] == "qwen2.5:7b-instruct"
+    # The same content, split by heading, alongside the flat text.
+    assert body["summary"]["session_main_topics"] == ["חרדה במהלך השבוע."]
+
+
+def test_ready_summary_splits_every_section() -> None:
+    text = (
+        "כותרת הפגישה\n\n"
+        "מולאן · 24/06/26 · 15:00 · 50 דק׳\n\n"
+        "**תובנות מרכזיות**\nתובנה מרכזית אחת.\n\n"
+        "**סיכום הפגישה**\nמה קרה בפגישה.\n\n"
+        "**נושאים מרכזיים**\n- נושא ראשון\n- נושא שני\n\n"
+        "**דגלי סיכון**\n"
+        "*(אינדיקטור בלבד. אינו מהווה אבחנה רפואית)*\n"
+        "**בינוני** — נדרשת עבודה הדרגתית."
+    )
+    client = _client(_stored("ready", text=text))
+
+    res = client.get(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 200
+    summary = res.json()["summary"]
+    assert summary["title"] == "כותרת הפגישה"
+    assert summary["subtitle"] == "מולאן · 24/06/26 · 15:00 · 50 דק׳"
+    assert summary["insights"] == "תובנה מרכזית אחת."
+    assert summary["session_summary"] == "מה קרה בפגישה."
+    assert summary["session_main_topics"] == ["נושא ראשון", "נושא שני"]
+    assert summary["session_risk_flags"]["level"] == "בינוני"
+    assert summary["session_risk_flags"]["note"] == "נדרשת עבודה הדרגתית."
+
+
+def test_unparseable_summary_still_returns_the_text() -> None:
+    client = _client(_stored("ready", text="טקסט חופשי בלי כותרות."))
+
+    res = client.get(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["text"] == "טקסט חופשי בלי כותרות."
+    assert body["summary"] is None
+
+
+def test_pending_summary_has_no_structured_view() -> None:
+    client = _client(_stored("pending"))
+
+    res = client.get(f"/meetings/{MEETING_ID}/summary")
+
+    assert res.status_code == 202
+    assert res.json()["summary"] is None
 
 
 def test_running_summary_returns_202() -> None:

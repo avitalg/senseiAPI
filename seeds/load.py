@@ -36,9 +36,25 @@ PATIENTS_DIR = Path(__file__).with_name("patients")
 # Stable namespace so every row's id is reproducible across runs.
 SEED_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "senseiapi:seed")
 
+# Mirrors the marker the mock corpus uses for the therapist's private note.
+NOTE_PREFIX = "🎙️ הקלטת המטפל (Note): "
+
 
 def _sid(*parts: str) -> uuid.UUID:
     return uuid.uuid5(SEED_NAMESPACE, ":".join(parts))
+
+
+def _raw_text(session: dict[str, Any]) -> str:
+    """Compose a transcript: the dictated recording plus the therapist's private note.
+
+    Seed files written before the note existed simply omit the key, so they keep
+    loading unchanged.
+    """
+    transcript = str(session["transcript"])
+    note = session.get("note")
+    if not note:
+        return transcript
+    return f"{transcript}\n\n{NOTE_PREFIX}{note}"
 
 
 def _load_patient_files() -> list[dict[str, Any]]:
@@ -89,7 +105,7 @@ async def _seed_patient(session: AsyncSession, data: dict[str, Any]) -> int:
                 user_id=user_id,
                 id=_sid("transcript", slug, n),
                 meeting_id=meeting_id,
-                raw_text=s["transcript"],
+                raw_text=_raw_text(s),
                 diarized_segments=[],
                 language="he",
                 created_at=start_at,
