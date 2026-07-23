@@ -24,6 +24,14 @@ strict = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 
+# numpy (a faster-whisper dependency) ships stubs written with the 3.12+ `type`
+# statement. Parsing them under our 3.11 floor is a syntax error that aborts the
+# whole run, so skip them — we never annotate against numpy ourselves.
+[[tool.mypy.overrides]]
+module = "numpy.*"
+follow_imports = "skip"
+follow_imports_for_stubs = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
