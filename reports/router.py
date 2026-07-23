@@ -1,8 +1,9 @@
 import logging
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from auth.router import get_current_user
@@ -14,11 +15,21 @@ from patients.models import PatientNotFoundError
 from patients.service import PatientService
 from reports.dependencies import get_report_service
 from reports.models import MeetingPatientMismatchError, NoUpcomingMeetingError, StoredReport
+from reports.parse import report_to_speech_text
 from reports.schemas import MeetingReportListItem, NextMeetingReportResponse
 from reports.service import NextMeetingReportService, run_report_generation
 from summaries.dependencies import get_summary_reader
 from summaries.format import normalize_summary_output
 from summaries.repository import SummaryRepository
+from tts.dependencies import build_tts_service
+from tts.errors import (
+    EmptyTextError,
+    InvalidSpeechSpeedError,
+    SpeechSynthesisFailedError,
+    TextTooLongError,
+    TTSConfigurationError,
+)
+from tts.models import MAX_SPEECH_SPEED, MIN_SPEECH_SPEED
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +64,15 @@ def _meeting_http_error(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail="failed to resolve meeting",
+    )
+
+
+def _speech_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, (EmptyTextError, TextTooLongError, InvalidSpeechSpeedError)):
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="failed to synthesize speech",
     )
 
 
@@ -188,6 +208,66 @@ async def get_meeting_report(
         summaries=summaries,
         before_start_at=meeting.start_at,
     )
+
+
+@router.get("/{patient_id}/meeting-reports/{meeting_id}/speech")
+async def get_meeting_report_speech(
+    patient_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    settings: SettingsDep,
+    speed: Annotated[
+        float | None,
+        Query(ge=MIN_SPEECH_SPEED, le=MAX_SPEECH_SPEED),
+    ] = None,
+    current_user: User = Depends(get_current_user),
+    patients: PatientService = Depends(get_patient_service),
+    service: NextMeetingReportService = Depends(get_report_service),
+) -> Response:
+    await _ensure_patient_exists(current_user.user_id, patient_id, patients)
+    try:
+        await service.verify_meeting_for_patient(current_user.user_id, patient_id, meeting_id)
+    except (CalendarEventNotFoundError, MeetingPatientMismatchError) as exc:
+        raise _meeting_http_error(exc) from exc
+
+    report = await service.get(current_user.user_id, meeting_id)
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no meeting report for patient {patient_id} meeting {meeting_id}",
+        )
+
+    if report.status in ("pending", "running"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="meeting report is still generating",
+        )
+    if report.status == "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=report.error or "meeting report generation failed",
+        )
+
+    text = report_to_speech_text(report)
+
+    try:
+        tts_service = build_tts_service(settings)
+    except TTSConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="text-to-speech is not available",
+        ) from exc
+
+    try:
+        audio = await tts_service.synthesize(text=text, speed=speed)
+    except (
+        EmptyTextError,
+        TextTooLongError,
+        InvalidSpeechSpeedError,
+        SpeechSynthesisFailedError,
+    ) as exc:
+        raise _speech_http_error(exc) from exc
+
+    return Response(content=audio.data, media_type=audio.media_type)
 
 
 @router.post(

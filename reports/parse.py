@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from reports.models import StoredReport
+
 INTRO_HEADING = "## סקירה מהירה"
 CHANGES_HEADING = "## שינויים ומגמות"
 OPEN_HEADING = "## נושאים פתוחים לפגישה הבאה"
@@ -155,3 +157,27 @@ def parse_report_output(text: str) -> tuple[str, list[str], list[str]]:
     if parsed is not None:
         return parsed
     return parse_report_markdown(text)
+
+
+def _ensure_terminal_punctuation(text: str) -> str:
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
+def report_to_speech_text(report: StoredReport) -> str:
+    parts: list[str] = []
+
+    intro = (report.intro or "").strip()
+    if intro:
+        parts.append(_ensure_terminal_punctuation(intro))
+
+    if report.changes:
+        label = CHANGES_HEADING.removeprefix("## ")
+        parts.append(_ensure_terminal_punctuation(f"{label}: " + "; ".join(report.changes)))
+
+    if report.open_topics:
+        label = OPEN_HEADING.removeprefix("## ")
+        parts.append(_ensure_terminal_punctuation(f"{label}: " + "; ".join(report.open_topics)))
+
+    # A blank line between sections gives TTS engines a paragraph-break pause cue;
+    # a single "\n" is often collapsed to a space before synthesis.
+    return "\n\n".join(parts)

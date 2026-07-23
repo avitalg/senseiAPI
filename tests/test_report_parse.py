@@ -1,11 +1,39 @@
 import json
+import uuid
+from datetime import UTC, datetime
 
+from reports.models import StoredReport
 from reports.parse import (
     FOLLOWUP_HEADING,
     bullets_under_heading,
     parse_report_markdown,
     parse_report_output,
+    report_to_speech_text,
 )
+
+
+def _stored_report(
+    *,
+    intro: str | None = None,
+    changes: list[str] | None = None,
+    open_topics: list[str] | None = None,
+) -> StoredReport:
+    now = datetime.now(UTC)
+    return StoredReport(
+        user_id=uuid.uuid4(),
+        id=uuid.uuid4(),
+        patient_id=uuid.uuid4(),
+        meeting_id=uuid.uuid4(),
+        status="ready",
+        intro=intro,
+        changes=changes or [],
+        open_topics=open_topics or [],
+        source_meeting_ids=[],
+        model="qwen2.5:7b-instruct",
+        error=None,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 def test_parse_splits_three_hebrew_sections() -> None:
@@ -159,3 +187,74 @@ def test_parse_failure_keeps_raw_text_as_intro() -> None:
     assert intro == raw
     assert changes == []
     assert open_topics == []
+
+
+def test_report_to_speech_text_includes_all_sections() -> None:
+    report = _stored_report(
+        intro="מצב יציב עם חשש קל.",
+        changes=["שיפור בוויסות", "פחות הימנעות"],
+        open_topics=["לחזור לשינה", "לחזק מסוגלות"],
+    )
+
+    text = report_to_speech_text(report)
+
+    assert "מצב יציב עם חשש קל." in text
+    assert "שינויים ומגמות: שיפור בוויסות; פחות הימנעות" in text
+    assert "נושאים פתוחים לפגישה הבאה: לחזור לשינה; לחזק מסוגלות" in text
+    assert text.index("מצב יציב") < text.index("שינויים ומגמות")
+    assert text.index("שינויים ומגמות") < text.index("נושאים פתוחים")
+
+
+def test_report_to_speech_text_separates_sections_with_blank_line() -> None:
+    report = _stored_report(
+        intro="מצב יציב.",
+        changes=["שיפור בוויסות"],
+        open_topics=["לחזור לשינה"],
+    )
+
+    text = report_to_speech_text(report)
+
+    assert text == (
+        "מצב יציב.\n\nשינויים ומגמות: שיפור בוויסות.\n\nנושאים פתוחים לפגישה הבאה: לחזור לשינה."
+    )
+
+
+def test_report_to_speech_text_appends_missing_terminal_punctuation() -> None:
+    report = _stored_report(
+        intro="מצב יציב",
+        changes=["שיפור בוויסות"],
+        open_topics=["לחזור לשינה"],
+    )
+
+    text = report_to_speech_text(report)
+
+    assert "מצב יציב.\n\n" in text
+    assert text.endswith("לחזור לשינה.")
+
+
+def test_report_to_speech_text_does_not_double_punctuate() -> None:
+    report = _stored_report(intro="מה קורה?", changes=[], open_topics=[])
+
+    text = report_to_speech_text(report)
+
+    assert text == "מה קורה?"
+
+
+def test_report_to_speech_text_omits_empty_sections() -> None:
+    report = _stored_report(intro="מצב יציב.", changes=[], open_topics=[])
+
+    text = report_to_speech_text(report)
+
+    assert text == "מצב יציב."
+
+
+def test_report_to_speech_text_blank_report_returns_empty_string() -> None:
+    report = _stored_report(intro=None, changes=[], open_topics=[])
+
+    assert report_to_speech_text(report) == ""
+
+
+def test_report_to_speech_text_strips_whitespace_only_intro() -> None:
+    report = _stored_report(intro="   ", changes=[], open_topics=[])
+
+    assert report_to_speech_text(report) == ""
