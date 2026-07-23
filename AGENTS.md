@@ -53,6 +53,8 @@ pip install -r requirements.txt -r requirements-dev.txt
   - `ruff format --check .`
   - `mypy .`
   - `pytest`
+- GitHub Actions (`.github/workflows/ci.yml`) runs the same full gate (`make check-all`)
+  on every PR and push to `main`; keep that workflow green before merge/deploy.
 
 ## Coding Standards (must follow)
 - **Types everywhere.** Full type hints on all functions; no bare `Any` without a reason.

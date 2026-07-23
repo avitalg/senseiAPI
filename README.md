@@ -138,6 +138,10 @@ make test-all           # unit + integration tests only (needs Docker)
 That is the project's default testing target: ruff lint, format check, mypy, and the
 full pytest suite including integration tests.
 
+The same gate runs in GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+on every pull request and every push to `main`. Mark the `ci / verify` check as
+**required** on `main` so nothing deploys from a red build.
+
 Or manually after `source .venv/bin/activate` (and `conda deactivate` if you use Anaconda):
 
 ```bash
